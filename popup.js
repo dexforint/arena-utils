@@ -1,6 +1,8 @@
 const autoscroll = document.getElementById("autoscroll");
 const exportButton = document.getElementById("export");
 const promptsRoot = document.getElementById("prompts");
+const codebaseRoot = document.getElementById("codebase");
+const codebaseMeta = document.getElementById("codebase-meta");
 const statusEl = document.getElementById("status");
 
 async function getActiveTab() {
@@ -23,27 +25,27 @@ async function sendToTab(tabId, message) {
 	}
 }
 
-function renderPrompts(prompts, tab) {
-	promptsRoot.replaceChildren();
+function renderButtonList(root, items, tab, emptyText) {
+	root.replaceChildren();
 
-	if (!Array.isArray(prompts) || prompts.length === 0) {
+	if (!Array.isArray(items) || items.length === 0) {
 		const empty = document.createElement("div");
 		empty.className = "empty";
-		empty.textContent = "No prompts yet. Open Edit to add some.";
-		promptsRoot.appendChild(empty);
+		empty.textContent = emptyText;
+		root.appendChild(empty);
 		return;
 	}
 
-	for (const prompt of prompts) {
+	for (const item of items) {
 		const button = document.createElement("button");
 		button.type = "button";
 		button.className = "prompt";
-		button.textContent = prompt.name || "Untitled prompt";
+		button.textContent = item.name || "Untitled";
 		button.disabled = !isArenaTab(tab);
 		button.addEventListener("click", async () => {
 			const result = await sendToTab(tab.id, {
 				type: "ARENA_INSERT_PROMPT",
-				text: prompt.text || "",
+				text: item.text || "",
 			});
 
 			if (!result?.ok) {
@@ -53,7 +55,7 @@ function renderPrompts(prompts, tab) {
 
 			window.close();
 		});
-		promptsRoot.appendChild(button);
+		root.appendChild(button);
 	}
 }
 
@@ -62,10 +64,28 @@ async function init() {
 	const stored = await chrome.storage.local.get({
 		disableAutoscroll: false,
 		prompts: [],
+		codebaseSnapshot: null,
 	});
 
 	autoscroll.checked = Boolean(stored.disableAutoscroll);
-	renderPrompts(stored.prompts, tab);
+	renderButtonList(promptsRoot, stored.prompts, tab, "No prompts yet. Open Edit to add some.");
+
+	const snapshot = stored.codebaseSnapshot;
+	if (snapshot?.chunks?.length) {
+		codebaseMeta.textContent = `${snapshot.folderName} · ${snapshot.stats.parts} parts · ${snapshot.stats.characters} chars`;
+		renderButtonList(
+			codebaseRoot,
+			snapshot.chunks.map((chunk) => ({
+				name: `${chunk.name} (${chunk.chars})`,
+				text: chunk.text,
+			})),
+			tab,
+			"",
+		);
+	} else {
+		codebaseMeta.textContent = "";
+		renderButtonList(codebaseRoot, [], tab, "No snapshot yet. Open Prepare and select a folder.");
+	}
 
 	if (!isArenaTab(tab)) {
 		statusEl.textContent = "Open an arena.ai chat first";

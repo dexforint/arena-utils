@@ -15,7 +15,7 @@ main {
 	padding: 32px 20px 64px;
 }
 
-header {
+.page-header {
 	display: flex;
 	justify-content: space-between;
 	gap: 16px;
@@ -41,13 +41,22 @@ button {
 	font: inherit;
 }
 
-#add {
+#add,
+#pick-folder,
+#generate {
 	background: #2f6df6;
 	color: white;
 	font-weight: 700;
 }
 
-.card {
+#generate:disabled,
+#pick-folder:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+
+.card,
+.settings-card {
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
@@ -73,6 +82,13 @@ textarea {
 	resize: vertical;
 }
 
+#exclude,
+#content-exclude {
+	min-height: 140px;
+	font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+	font-size: 12px;
+}
+
 .card-actions {
 	display: flex;
 	justify-content: flex-end;
@@ -89,4 +105,63 @@ textarea {
 	background: white;
 	border-radius: 14px;
 	border: 1px dashed #cfd8e8;
+}
+
+.codebase {
+	margin-top: 48px;
+}
+
+.row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.wrap {
+	flex-wrap: wrap;
+}
+
+.muted {
+	color: #5b657a;
+	font-size: 13px;
+}
+
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	font-size: 13px;
+	font-weight: 650;
+}
+
+.check {
+	display: flex;
+	gap: 8px;
+	align-items: flex-start;
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.check input {
+	width: auto;
+}
+
+.status {
+	margin: 0;
+	white-space: pre-wrap;
+	color: #5b657a;
+	font-size: 12px;
+}
+
+.chunk {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 8px 0;
+	border-top: 1px solid #edf2fa;
+	font-size: 13px;
+}
+
+#max-chars {
+	max-width: 220px;
 }

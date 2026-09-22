@@ -25,3 +25,17 @@ Odd files are user messages, even files are model replies — if the thread star
 - Toolbar icon opens the popup: autoscroll toggle, export, prompts
 - Right-click the extension → Options to edit prompts
 - On a chat page, use the `Messages` chip in the top-right to jump between turns
+
+## Codebase prompts
+
+Chrome extensions cannot read a typed path like `C:\project`. Use Options → **Select folder**, then **Generate prompts**.
+
+The snapshot uses the same format as the Python script:
+
+- directory tree
+- file contents
+- split into `context-0001`, `context-0002`, … by character limit
+
+Full exclude drops files from the snapshot. Content exclude keeps them in the tree but skips the body (`.env`, lockfiles, `*.json`, …).
+
+Generated chunks appear in the popup and insert into the arena.ai composer.

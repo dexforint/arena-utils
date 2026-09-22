@@ -3,13 +3,13 @@
 
 <head>
     <meta charset="utf-8" />
-    <title>Arena Utils — Prompts</title>
+    <title>Arena Utils — Settings</title>
     <link rel="stylesheet" href="options.css" />
 </head>
 
 <body>
     <main>
-        <header>
+        <header class="page-header">
             <div>
                 <h1>Prompts</h1>
                 <p>These appear in the extension popup. Clicking one inserts it into the arena.ai composer.</p>
@@ -17,7 +17,56 @@
             <button id="add" type="button">Add prompt</button>
         </header>
         <div id="list"></div>
+
+        <section class="codebase">
+            <header class="page-header">
+                <div>
+                    <h1>Codebase prompts</h1>
+                    <p>
+                        Chrome cannot read a typed filesystem path. Choose a folder, generate chunks, then insert them
+                        from the popup.
+                        This is the JS port of the Python snapshot script.
+                    </p>
+                </div>
+            </header>
+
+            <div class="card settings-card">
+                <div class="row wrap">
+                    <button id="pick-folder" type="button">Select folder</button>
+                    <span id="folder-name" class="muted">No folder selected</span>
+                </div>
+
+                <label class="field">
+                    <span>Max characters per chunk</span>
+                    <input id="max-chars" type="number" min="0" step="1000" />
+                </label>
+
+                <label class="check">
+                    <input id="use-gitignore" type="checkbox" />
+                    <span>Also apply the folder’s root .gitignore</span>
+                </label>
+
+                <label class="field">
+                    <span>Full exclude (gitignore syntax)</span>
+                    <textarea id="exclude" spellcheck="false"></textarea>
+                </label>
+
+                <label class="field">
+                    <span>Content exclude — keep in the tree, skip file bodies</span>
+                    <textarea id="content-exclude" spellcheck="false"></textarea>
+                </label>
+
+                <div class="row wrap">
+                    <button id="generate" type="button">Generate prompts</button>
+                    <button id="clear-codebase" class="delete" type="button">Clear generated</button>
+                </div>
+
+                <pre id="codebase-status" class="status"></pre>
+                <div id="chunk-list"></div>
+            </div>
+        </section>
     </main>
+    <script src="codebase.js"></script>
     <script src="options.js"></script>
 </body>
 
