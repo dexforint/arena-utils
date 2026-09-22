@@ -1154,6 +1154,10 @@ function setPanelCollapsed(collapsed, persist = true) {
 		els.chevron.textContent = panelCollapsed ? "▾" : "▴";
 	}
 
+	if (!panelCollapsed) {
+		updateActiveItem({ follow: true });
+	}
+
 	if (persist) {
 		void chrome.storage.local.set({ panelCollapsed });
 	}
@@ -1270,7 +1274,7 @@ function scrollToChatBottom() {
 	if (cachedMessages.length > 0) {
 		currentIndex = cachedMessages.length - 1;
 		pinnedUntil = Date.now() + 1000;
-		updateActiveItem();
+		updateActiveItem({ follow: true });
 		highlightMessage(cachedMessages[currentIndex].root);
 	}
 }
@@ -1344,12 +1348,13 @@ function scrollChildIntoContainer(child, container) {
 	}
 }
 
-function updateActiveItem() {
+function updateActiveItem(options = {}) {
 	const els = getPanelEls();
 	if (!els) {
 		return;
 	}
 
+	const follow = Boolean(options.follow);
 	const total = cachedMessages.length;
 	const index = currentIndex >= 0 && currentIndex < total ? currentIndex : -1;
 	const label = total === 0 ? "0" : `${index >= 0 ? index + 1 : "–"}/${total}`;
@@ -1370,7 +1375,7 @@ function updateActiveItem() {
 		btn.classList.toggle("active", i === index);
 	});
 
-	if (index >= 0 && items[index] && els.body) {
+	if (follow && index >= 0 && items[index] && els.body) {
 		scrollChildIntoContainer(items[index], els.body);
 	}
 }
@@ -1379,7 +1384,7 @@ function jumpToMessage(root, index = null) {
 	if (typeof index === "number") {
 		currentIndex = index;
 		pinnedUntil = Date.now() + 1000;
-		updateActiveItem();
+		updateActiveItem({ follow: true });
 	}
 
 	scrollToMessageStart(root);
