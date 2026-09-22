@@ -9,6 +9,10 @@
 
 	function isAutoscrollDisabled() {
 		try {
+			if (sessionStorage.getItem("__arena_utils_allow_scroll") === "1") {
+				return false;
+			}
+
 			return sessionStorage.getItem(AUTOSCROLL_KEY) === "1";
 		} catch (_error) {
 			return false;

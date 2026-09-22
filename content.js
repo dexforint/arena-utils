@@ -954,6 +954,146 @@ function getScrollParent(el) {
 	return document.scrollingElement || document.documentElement;
 }
 
+function isWindowScroller(scroller) {
+	return !scroller || scroller === document.documentElement || scroller === document.body || scroller === document.scrollingElement;
+}
+
+function scrollToMessageStart(root) {
+	const scroller = getScrollParent(root);
+	const rootRect = root.getBoundingClientRect();
+
+	if (isWindowScroller(scroller)) {
+		const top = window.scrollY + rootRect.top - MESSAGE_SCROLL_OFFSET;
+		window.scrollTo({
+			top: Math.max(0, top),
+			behavior: "smooth",
+		});
+		return;
+	}
+
+	const scrollerRect = scroller.getBoundingClientRect();
+	const top = scroller.scrollTop + (rootRect.top - scrollerRect.top) - MESSAGE_SCROLL_OFFSET;
+
+	if (typeof scroller.scrollTo === "function") {
+		scroller.scrollTo({
+			top: Math.max(0, top),
+			behavior: "smooth",
+		});
+		return;
+	}
+
+	scroller.scrollTop = Math.max(0, top);
+}
+
+const ALLOW_SCROLL_KEY = "__arena_utils_allow_scroll";
+const MESSAGE_SCROLL_OFFSET = 16;
+
+function withAllowedScroll(fn) {
+	try {
+		sessionStorage.setItem(ALLOW_SCROLL_KEY, "1");
+	} catch (_error) {
+		/* ignore */
+	}
+
+	try {
+		fn();
+	} finally {
+		try {
+			sessionStorage.removeItem(ALLOW_SCROLL_KEY);
+		} catch (_error) {
+			/* ignore */
+		}
+	}
+}
+
+function isWindowScroller(scroller) {
+	return !scroller || scroller === document.documentElement || scroller === document.body || scroller === document.scrollingElement;
+}
+
+function scrollToMessageStart(root) {
+	const scroller = getScrollParent(root);
+	const rootRect = root.getBoundingClientRect();
+
+	withAllowedScroll(() => {
+		if (isWindowScroller(scroller)) {
+			const top = window.scrollY + rootRect.top - MESSAGE_SCROLL_OFFSET;
+			window.scrollTo({
+				top: Math.max(0, top),
+				behavior: "smooth",
+			});
+			return;
+		}
+
+		const scrollerRect = scroller.getBoundingClientRect();
+		const top = scroller.scrollTop + (rootRect.top - scrollerRect.top) - MESSAGE_SCROLL_OFFSET;
+
+		if (typeof scroller.scrollTo === "function") {
+			scroller.scrollTo({
+				top: Math.max(0, top),
+				behavior: "smooth",
+			});
+			return;
+		}
+
+		scroller.scrollTop = Math.max(0, top);
+	});
+}
+
+function getScrollerMaxTop(scroller) {
+	if (isWindowScroller(scroller)) {
+		const el = document.scrollingElement || document.documentElement;
+		return Math.max(0, el.scrollHeight - window.innerHeight);
+	}
+
+	return Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+}
+
+function getBottomScrollTop(scroller) {
+	if (isWindowScroller(scroller)) {
+		return getScrollerMaxTop(scroller);
+	}
+
+	const direction = window.getComputedStyle(scroller).flexDirection;
+	if (direction.includes("reverse")) {
+		return 0;
+	}
+
+	return getScrollerMaxTop(scroller);
+}
+
+function scrollToChatBottom() {
+	const list = getMessageList();
+	const scroller = list ? getScrollParent(list) : document.scrollingElement || document.documentElement;
+	const top = getBottomScrollTop(scroller);
+
+	withAllowedScroll(() => {
+		if (isWindowScroller(scroller)) {
+			window.scrollTo({
+				top,
+				behavior: "smooth",
+			});
+			return;
+		}
+
+		if (typeof scroller.scrollTo === "function") {
+			scroller.scrollTo({
+				top,
+				behavior: "smooth",
+			});
+			return;
+		}
+
+		scroller.scrollTop = top;
+	});
+
+	if (cachedMessages.length > 0) {
+		currentIndex = cachedMessages.length - 1;
+		pinnedUntil = Date.now() + 1000;
+		updateActiveItem();
+		highlightMessage(cachedMessages[currentIndex].root);
+	}
+}
+
 function getViewportForMessages() {
 	const list = getMessageList();
 	const scroller = list ? getScrollParent(list) : null;
@@ -984,33 +1124,32 @@ function getCurrentMessageIndex(messages) {
 		return currentIndex;
 	}
 
-	const readingY = view.top + view.height * 0.38;
-	let containing = -1;
+	const readingY = view.top + 48;
+	let current = -1;
 	let best = -1;
 	let bestDist = Infinity;
 
 	for (let i = 0; i < messages.length; i += 1) {
 		const rect = messages[i].root.getBoundingClientRect();
-		const visible = rect.bottom > view.top + 12 && rect.top < view.bottom - 12;
+		const visible = rect.bottom > view.top + 8 && rect.top < view.bottom - 8;
+
+		if (rect.top <= readingY && rect.bottom > view.top + 8) {
+			current = i;
+		}
 
 		if (!visible) {
 			continue;
 		}
 
-		if (rect.top <= readingY && rect.bottom >= readingY) {
-			containing = i;
-		}
-
-		const mid = (rect.top + Math.min(rect.bottom, view.bottom)) / 2;
-		const dist = Math.abs(mid - readingY);
+		const dist = Math.abs(rect.top - readingY);
 		if (dist < bestDist) {
 			bestDist = dist;
 			best = i;
 		}
 	}
 
-	if (containing >= 0) {
-		return containing;
+	if (current >= 0) {
+		return current;
 	}
 
 	if (best >= 0) {
@@ -1071,15 +1210,11 @@ function updateActiveItem() {
 function jumpToMessage(root, index = null) {
 	if (typeof index === "number") {
 		currentIndex = index;
-		pinnedUntil = Date.now() + 700;
+		pinnedUntil = Date.now() + 1000;
 		updateActiveItem();
 	}
 
-	root.scrollIntoView({
-		behavior: "smooth",
-		block: "center",
-		inline: "nearest",
-	});
+	scrollToMessageStart(root);
 	highlightMessage(root);
 }
 
@@ -1258,11 +1393,12 @@ function ensurePanel() {
 				<span class="chevron">${panelCollapsed ? "▾" : "▴"}</span>
 			</button>
 			<div class="body">
-				<div class="nav">
-					<button class="nav-btn" type="button" data-dir="-1" title="Previous message (↑)">↑</button>
-					<span class="pos">–/–</span>
-					<button class="nav-btn" type="button" data-dir="1" title="Next message (↓)">↓</button>
-				</div>
+        <div class="nav">
+          <button class="nav-btn" type="button" data-dir="-1" title="Previous message (↑)">↑</button>
+          <span class="pos">–/–</span>
+          <button class="nav-btn" type="button" data-dir="1" title="Next message (↓)">↓</button>
+          <button class="nav-btn" type="button" data-bottom title="Scroll to bottom">⤓</button>
+        </div>
 				<div class="list"></div>
 				<div class="hint">↑ / ↓ jump between messages</div>
 			</div>
@@ -1281,6 +1417,11 @@ function ensurePanel() {
 	shadow.querySelector('[data-dir="1"]').addEventListener("click", (event) => {
 		event.preventDefault();
 		stepMessage(1);
+	});
+
+	shadow.querySelector("[data-bottom]").addEventListener("click", (event) => {
+		event.preventDefault();
+		scrollToChatBottom();
 	});
 
 	document.documentElement.appendChild(host);
