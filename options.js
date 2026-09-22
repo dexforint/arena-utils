@@ -175,6 +175,12 @@ function updateFolderLabel() {
 	folderNameEl.textContent = dirHandle ? dirHandle.name : "No folder selected";
 }
 
+function applyOptionsTheme() {
+	const mode = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+	document.documentElement.dataset.theme = mode;
+	document.documentElement.style.colorScheme = mode;
+}
+
 addButton.addEventListener("click", () => {
 	prompts.push({
 		id: uid(),
@@ -268,6 +274,9 @@ clearButton.addEventListener("click", async () => {
 });
 
 async function init() {
+	applyOptionsTheme();
+	window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyOptionsTheme);
+
 	const stored = await chrome.storage.local.get({
 		prompts: [],
 		collapseCodeBlocks: true,

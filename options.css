@@ -1,12 +1,45 @@
 :root {
-	color-scheme: light dark;
-	font-family: system-ui, sans-serif;
+	color-scheme: light;
+	--header-primary: 60 3% 14%;
+	--text-primary: 24 6% 17%;
+	--text-secondary: 30 7% 24%;
+	--text-tertiary: 35 6% 38%;
+	--text-muted: 37 5% 52%;
+	--interactive-active: 60 4% 11%;
+	--interactive-normal: 30 7% 24%;
+	--interactive-link: 208 77% 52%;
+	--interactive-negative: 2 70% 42%;
+	--surface-bg: 252, 250, 248;
+	--surface-raised: 240, 235, 229;
+	--surface-card: 255, 255, 255;
+	--border: 225, 222, 219;
+	--border-faint: 229, 231, 235;
+	--font-ui: var(--font-basel-grotesk), ui-sans-serif, system-ui, sans-serif;
+}
+
+:root[data-theme="dark"] {
+	color-scheme: dark;
+	--header-primary: 0 0% 100%;
+	--text-primary: 33 31% 94%;
+	--text-secondary: 35 20% 88%;
+	--text-tertiary: 33 9% 76%;
+	--text-muted: 35 6% 38%;
+	--interactive-active: 0 0% 100%;
+	--interactive-normal: 35 20% 88%;
+	--interactive-link: 208 100% 58%;
+	--interactive-negative: 2 86% 63%;
+	--surface-bg: 22, 20, 18;
+	--surface-raised: 36, 32, 28;
+	--surface-card: 28, 25, 22;
+	--border: 58, 52, 46;
+	--border-faint: 48, 44, 40;
 }
 
 body {
 	margin: 0;
-	background: #f4f6fb;
-	color: #161b26;
+	background: rgb(var(--surface-bg));
+	color: hsl(var(--text-primary));
+	font-family: var(--font-ui);
 }
 
 main {
@@ -26,27 +59,45 @@ main {
 h1 {
 	margin: 0 0 6px;
 	font-size: 28px;
+	font-weight: 650;
+	letter-spacing: -0.02em;
+	color: hsl(var(--header-primary));
 }
 
 p {
 	margin: 0;
-	color: #5b657a;
+	color: hsl(var(--text-secondary));
+	line-height: 1.45;
 }
 
 button {
-	border: 0;
-	border-radius: 10px;
+	border: 1px solid rgb(var(--border));
+	border-radius: 8px;
 	padding: 8px 12px;
+	background: transparent;
+	color: hsl(var(--interactive-active));
 	cursor: pointer;
 	font: inherit;
+	transition: background 0.15s ease;
+}
+
+button:hover:not(:disabled) {
+	background: rgb(var(--surface-raised));
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+	outline: 2px solid hsl(var(--interactive-link) / 0.45);
+	outline-offset: 2px;
 }
 
 #add,
 #pick-folder,
 #generate {
-	background: #2f6df6;
-	color: white;
-	font-weight: 700;
+	background: rgb(var(--surface-raised));
+	border-color: transparent;
+	font-weight: 650;
 }
 
 #generate:disabled,
@@ -62,9 +113,9 @@ button {
 	gap: 8px;
 	margin-bottom: 12px;
 	padding: 14px;
-	background: white;
-	border: 1px solid #dbe3f0;
-	border-radius: 14px;
+	background: rgb(var(--surface-card));
+	border: 1px solid rgb(var(--border-faint));
+	border-radius: 12px;
 }
 
 input,
@@ -72,8 +123,10 @@ textarea {
 	width: 100%;
 	box-sizing: border-box;
 	padding: 8px 10px;
-	border: 1px solid #cfd8e8;
+	border: 1px solid rgb(var(--border));
 	border-radius: 8px;
+	background: rgb(var(--surface-bg));
+	color: hsl(var(--text-primary));
 	font: inherit;
 }
 
@@ -95,16 +148,25 @@ textarea {
 }
 
 .delete {
-	background: #fee2e2;
-	color: #9f1239;
+	background: hsl(var(--interactive-negative) / 0.12);
+	border-color: transparent;
+	color: hsl(var(--interactive-negative));
+}
+
+.delete:hover:not(:disabled) {
+	background: hsl(var(--interactive-negative) / 0.2);
 }
 
 .empty {
 	padding: 24px;
-	color: #5b657a;
-	background: white;
-	border-radius: 14px;
-	border: 1px dashed #cfd8e8;
+	color: hsl(var(--text-muted));
+	background: rgb(var(--surface-card));
+	border-radius: 12px;
+	border: 1px dashed rgb(var(--border));
+}
+
+.chat-settings {
+	margin-bottom: 36px;
 }
 
 .codebase {
@@ -122,7 +184,7 @@ textarea {
 }
 
 .muted {
-	color: #5b657a;
+	color: hsl(var(--text-muted));
 	font-size: 13px;
 }
 
@@ -132,6 +194,7 @@ textarea {
 	gap: 6px;
 	font-size: 13px;
 	font-weight: 650;
+	color: hsl(var(--text-secondary));
 }
 
 .check {
@@ -140,16 +203,19 @@ textarea {
 	align-items: flex-start;
 	font-size: 13px;
 	font-weight: 500;
+	color: hsl(var(--text-primary));
 }
 
 .check input {
 	width: auto;
+	accent-color: hsl(var(--interactive-active));
+	margin-top: 2px;
 }
 
 .status {
 	margin: 0;
 	white-space: pre-wrap;
-	color: #5b657a;
+	color: hsl(var(--text-muted));
 	font-size: 12px;
 }
 
@@ -158,7 +224,7 @@ textarea {
 	justify-content: space-between;
 	gap: 12px;
 	padding: 8px 0;
-	border-top: 1px solid #edf2fa;
+	border-top: 1px solid rgb(var(--border-faint));
 	font-size: 13px;
 }
 

@@ -7,6 +7,12 @@ const codebaseRoot = document.getElementById("codebase");
 const codebaseMeta = document.getElementById("codebase-meta");
 const statusEl = document.getElementById("status");
 
+function applyTheme(theme) {
+	const mode = theme === "dark" ? "dark" : "light";
+	document.documentElement.dataset.theme = mode;
+	document.documentElement.style.colorScheme = mode;
+}
+
 async function getActiveTab() {
 	const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 	return tab;
@@ -111,12 +117,14 @@ async function init() {
 	});
 
 	if (!isArenaTab(tab)) {
+		applyTheme(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
 		statusEl.textContent = "Open an arena.ai chat first";
 		exportButton.disabled = true;
 		return;
 	}
 
 	const status = await sendToTab(tab.id, { type: "ARENA_GET_STATUS" });
+	applyTheme(status?.theme === "dark" ? "dark" : "light");
 	statusEl.textContent = status?.ok ? `${status.messageCount || 0} messages on this page` : "Reload the arena.ai tab after updating the extension";
 	exportButton.disabled = false;
 
