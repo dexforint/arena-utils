@@ -46,6 +46,10 @@ chrome.runtime.onInstalled.addListener(async () => {
 	if (Object.keys(patch).length > 0) {
 		await chrome.storage.local.set(patch);
 	}
+
+	if (typeof current.collapseCodeBlocks !== "boolean") {
+		patch.collapseCodeBlocks = true;
+	}
 });
 
 function sanitizeFileName(value) {

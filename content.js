@@ -1,6 +1,7 @@
 let exportInProgress = false;
 let requestCounter = 0;
 let panelCollapsed = true;
+let collapseCodeBlocks = true;
 let highlightTimer = 0;
 let refreshTimer = 0;
 let currentSyncTimer = 0;
@@ -17,6 +18,8 @@ const PAGE_STYLE_ID = "__arena_utils_page_style__";
 const AUTOSCROLL_KEY = "__arena_utils_disable_autoscroll";
 const ALLOW_SCROLL_KEY = "__arena_utils_allow_scroll";
 const MESSAGE_SCROLL_OFFSET = 16;
+const CODE_TOGGLE_CLASS = "__arena-utils-code-toggle";
+const CODE_COLLAPSED_CLASS = "__arena-utils-code-collapsed";
 
 const PANEL_CSS = `
 :host {
@@ -904,8 +907,160 @@ function ensurePageStyle() {
 			outline-offset: 4px !important;
 			border-radius: 10px !important;
 		}
+
+		[data-code-block="true"].${CODE_COLLAPSED_CLASS} > :not(:first-child) {
+			display: none !important;
+		}
+
+		.${CODE_TOGGLE_CLASS} {
+			margin-left: 6px;
+			border: 0;
+			border-radius: 6px;
+			padding: 4px 8px;
+			background: transparent;
+			color: inherit;
+			cursor: pointer;
+			font: inherit;
+			font-size: 12px;
+			line-height: 1.2;
+			opacity: 0.78;
+		}
+
+		.${CODE_TOGGLE_CLASS}:hover {
+			opacity: 1;
+			background: rgba(127, 127, 127, 0.12);
+		}
 	`;
 	document.documentElement.appendChild(style);
+}
+
+function getCodeHeader(block) {
+	return block.querySelector(":scope > div") || block.firstElementChild;
+}
+
+function getCodeLanguage(block) {
+	const header = getCodeHeader(block);
+	const label = header?.querySelector("span.text-sm, span.font-medium");
+	return String(label?.textContent || "code").trim() || "code";
+}
+
+function countCodeLines(block) {
+	const code = block.querySelector("code");
+	const text = String(code?.innerText || block.innerText || "").replace(/\n+$/, "");
+	if (!text) {
+		return 0;
+	}
+
+	return text.split("\n").length;
+}
+
+function isCodeBlockExpanded(block) {
+	return block.dataset.arenaUtilsExpanded === "1";
+}
+
+function updateCodeToggle(block) {
+	const button = block.querySelector(`.${CODE_TOGGLE_CLASS}`);
+	if (!button) {
+		return;
+	}
+
+	const expanded = isCodeBlockExpanded(block);
+	const lines = countCodeLines(block);
+	const lang = getCodeLanguage(block);
+	button.textContent = expanded ? "Hide" : lines ? `Show · ${lines}` : "Show";
+	button.title = expanded ? `Hide ${lang}` : `Show ${lang}`;
+	button.setAttribute("aria-expanded", expanded ? "true" : "false");
+}
+
+function setCodeBlockExpanded(block, expanded) {
+	block.dataset.arenaUtilsExpanded = expanded ? "1" : "0";
+	block.classList.toggle(CODE_COLLAPSED_CLASS, collapseCodeBlocks && !expanded);
+	updateCodeToggle(block);
+}
+
+function onCodeToggleClick(event) {
+	event.preventDefault();
+	event.stopPropagation();
+
+	const block = event.currentTarget.closest("[data-code-block='true']");
+	if (!block) {
+		return;
+	}
+
+	setCodeBlockExpanded(block, !isCodeBlockExpanded(block));
+}
+
+function ensureCodeToggle(block) {
+	if (block.querySelector(`.${CODE_TOGGLE_CLASS}`)) {
+		return;
+	}
+
+	const header = getCodeHeader(block);
+	if (!header) {
+		return;
+	}
+
+	const button = document.createElement("button");
+	button.type = "button";
+	button.className = CODE_TOGGLE_CLASS;
+	button.addEventListener("click", onCodeToggleClick);
+
+	const copyButton = header.querySelector("button");
+	if (copyButton) {
+		copyButton.before(button);
+	} else {
+		header.appendChild(button);
+	}
+}
+
+function teardownCodeBlock(block) {
+	block.classList.remove(CODE_COLLAPSED_CLASS);
+	delete block.dataset.arenaUtilsCode;
+	delete block.dataset.arenaUtilsExpanded;
+	block.querySelector(`.${CODE_TOGGLE_CLASS}`)?.remove();
+}
+
+function processCodeBlocks() {
+	ensurePageStyle();
+
+	const messages = cachedMessages.length ? cachedMessages : collectMessages();
+	const seen = new Set();
+
+	for (const message of messages) {
+		if (message.role !== "assistant") {
+			continue;
+		}
+
+		for (const block of message.root.querySelectorAll("[data-code-block='true']")) {
+			seen.add(block);
+
+			if (!collapseCodeBlocks) {
+				teardownCodeBlock(block);
+				continue;
+			}
+
+			ensureCodeToggle(block);
+			block.dataset.arenaUtilsCode = "1";
+
+			if (block.dataset.arenaUtilsExpanded !== "1") {
+				block.dataset.arenaUtilsExpanded = "0";
+			}
+
+			setCodeBlockExpanded(block, isCodeBlockExpanded(block));
+		}
+	}
+
+	for (const block of document.querySelectorAll("[data-code-block='true'][data-arena-utils-code]")) {
+		if (!seen.has(block) && !collapseCodeBlocks) {
+			teardownCodeBlock(block);
+		}
+	}
+
+	if (!collapseCodeBlocks) {
+		for (const block of document.querySelectorAll(`[data-code-block="true"].${CODE_COLLAPSED_CLASS}`)) {
+			teardownCodeBlock(block);
+		}
+	}
 }
 
 function getPanelEls() {
@@ -1267,6 +1422,7 @@ function renderPanelList() {
 
 	cachedMessages = collectMessages();
 	ensureScrollWatch();
+	processCodeBlocks();
 
 	const signature = cachedMessages.map((item, index) => `${index}:${item.role}:${previewFromRoot(item.root).slice(0, 80)}`).join("|");
 
@@ -1380,9 +1536,11 @@ async function init() {
 	const stored = await chrome.storage.local.get({
 		disableAutoscroll: false,
 		panelCollapsed: true,
+		collapseCodeBlocks: true,
 	});
 
 	panelCollapsed = Boolean(stored.panelCollapsed);
+	collapseCodeBlocks = stored.collapseCodeBlocks !== false;
 	writeAutoscrollFlag(Boolean(stored.disableAutoscroll));
 	ensurePanel();
 	setPanelCollapsed(panelCollapsed, false);
@@ -1412,6 +1570,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 	if (changes.panelCollapsed && typeof changes.panelCollapsed.newValue === "boolean") {
 		setPanelCollapsed(changes.panelCollapsed.newValue, false);
+	}
+
+	if (changes.collapseCodeBlocks) {
+		collapseCodeBlocks = changes.collapseCodeBlocks.newValue !== false;
+		processCodeBlocks();
 	}
 });
 

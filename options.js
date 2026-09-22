@@ -1,5 +1,6 @@
 const list = document.getElementById("list");
 const addButton = document.getElementById("add");
+const collapseCodeInput = document.getElementById("collapse-code");
 const pickFolderButton = document.getElementById("pick-folder");
 const generateButton = document.getElementById("generate");
 const clearButton = document.getElementById("clear-codebase");
@@ -184,6 +185,12 @@ addButton.addEventListener("click", () => {
 	renderPrompts();
 });
 
+collapseCodeInput.addEventListener("change", async () => {
+	await chrome.storage.local.set({
+		collapseCodeBlocks: collapseCodeInput.checked,
+	});
+});
+
 pickFolderButton.addEventListener("click", async () => {
 	try {
 		const handle = await window.showDirectoryPicker({
@@ -263,12 +270,15 @@ clearButton.addEventListener("click", async () => {
 async function init() {
 	const stored = await chrome.storage.local.get({
 		prompts: [],
+		collapseCodeBlocks: true,
 		codebaseSettings: null,
 		codebaseSnapshot: null,
 	});
 
 	prompts = Array.isArray(stored.prompts) ? stored.prompts : [];
 	renderPrompts();
+
+	collapseCodeInput.checked = stored.collapseCodeBlocks !== false;
 
 	applySettings(
 		stored.codebaseSettings || {

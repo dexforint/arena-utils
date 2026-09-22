@@ -1,4 +1,5 @@
 const autoscroll = document.getElementById("autoscroll");
+const collapseCode = document.getElementById("collapse-code");
 const exportButton = document.getElementById("export");
 const pickFolderButton = document.getElementById("pick-folder");
 const promptsRoot = document.getElementById("prompts");
@@ -83,11 +84,13 @@ async function init() {
 	const tab = await getActiveTab();
 	const stored = await chrome.storage.local.get({
 		disableAutoscroll: false,
+		collapseCodeBlocks: true,
 		prompts: [],
 		codebaseSnapshot: null,
 	});
 
 	autoscroll.checked = Boolean(stored.disableAutoscroll);
+	collapseCode.checked = stored.collapseCodeBlocks !== false;
 	renderButtonList(promptsRoot, stored.prompts, tab, "No prompts yet. Open Edit to add some.");
 	renderCodebase(stored.codebaseSnapshot, tab);
 
@@ -120,6 +123,12 @@ async function init() {
 	autoscroll.addEventListener("change", async () => {
 		await chrome.storage.local.set({
 			disableAutoscroll: autoscroll.checked,
+		});
+	});
+
+	collapseCode.addEventListener("change", async () => {
+		await chrome.storage.local.set({
+			collapseCodeBlocks: collapseCode.checked,
 		});
 	});
 
