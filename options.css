@@ -1,0 +1,92 @@
+:root {
+	color-scheme: light dark;
+	font-family: system-ui, sans-serif;
+}
+
+body {
+	margin: 0;
+	background: #f4f6fb;
+	color: #161b26;
+}
+
+main {
+	max-width: 760px;
+	margin: 0 auto;
+	padding: 32px 20px 64px;
+}
+
+header {
+	display: flex;
+	justify-content: space-between;
+	gap: 16px;
+	align-items: flex-start;
+	margin-bottom: 20px;
+}
+
+h1 {
+	margin: 0 0 6px;
+	font-size: 28px;
+}
+
+p {
+	margin: 0;
+	color: #5b657a;
+}
+
+button {
+	border: 0;
+	border-radius: 10px;
+	padding: 8px 12px;
+	cursor: pointer;
+	font: inherit;
+}
+
+#add {
+	background: #2f6df6;
+	color: white;
+	font-weight: 700;
+}
+
+.card {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-bottom: 12px;
+	padding: 14px;
+	background: white;
+	border: 1px solid #dbe3f0;
+	border-radius: 14px;
+}
+
+input,
+textarea {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 8px 10px;
+	border: 1px solid #cfd8e8;
+	border-radius: 8px;
+	font: inherit;
+}
+
+textarea {
+	min-height: 110px;
+	resize: vertical;
+}
+
+.card-actions {
+	display: flex;
+	justify-content: flex-end;
+}
+
+.delete {
+	background: #fee2e2;
+	color: #9f1239;
+}
+
+.empty {
+	padding: 24px;
+	color: #5b657a;
+	background: white;
+	border-radius: 14px;
+	border: 1px dashed #cfd8e8;
+}

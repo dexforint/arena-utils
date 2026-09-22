@@ -1,3 +1,53 @@
+const DEFAULT_PROMPTS = [
+	{
+		id: "explain-simply",
+		name: "Объясни просто",
+		text: "Объясни это простыми словами. Сначала суть в 2–3 предложениях, потом детали и короткий пример.",
+	},
+	{
+		id: "critical",
+		name: "Критический разбор",
+		text: "Разбери это критически: что верно, что спорно, каких допущений не хватает и что стоит проверить отдельно.",
+	},
+	{
+		id: "code-review",
+		name: "Code review",
+		text: "Сделай code review: баги, краевые случаи, читаемость и производительность. Предложи конкретные правки.",
+	},
+	{
+		id: "translate-en",
+		name: "Translate to English",
+		text: "Translate the following into natural English. Keep meaning, tone, and technical terms. Do not add commentary.",
+	},
+	{
+		id: "summarize",
+		name: "Краткое резюме",
+		text: "Суммируй ключевые тезисы списком. Отдельно укажи решения, открытые вопросы и следующие шаги.",
+	},
+];
+
+chrome.runtime.onInstalled.addListener(async () => {
+	const current = await chrome.storage.local.get(["prompts", "disableAutoscroll", "panelCollapsed"]);
+
+	const patch = {};
+
+	if (!Array.isArray(current.prompts)) {
+		patch.prompts = DEFAULT_PROMPTS;
+	}
+
+	if (typeof current.disableAutoscroll !== "boolean") {
+		patch.disableAutoscroll = false;
+	}
+
+	if (typeof current.panelCollapsed !== "boolean") {
+		patch.panelCollapsed = true;
+	}
+
+	if (Object.keys(patch).length > 0) {
+		await chrome.storage.local.set(patch);
+	}
+});
+
 function sanitizeFileName(value) {
 	return (
 		String(value || "")
@@ -10,25 +60,6 @@ function sanitizeFileName(value) {
 function makeDataUrl(text) {
 	return `data:text/markdown;charset=utf-8,${encodeURIComponent(text)}`;
 }
-
-chrome.action.onClicked.addListener(async (tab) => {
-	if (!tab?.id || !tab.url) {
-		return;
-	}
-
-	if (!/^https:\/\/([^/]+\.)?arena\.ai\//.test(tab.url)) {
-		console.warn("[arena-export] Open an arena.ai dialog page first.");
-		return;
-	}
-
-	try {
-		await chrome.tabs.sendMessage(tab.id, {
-			type: "ARENA_EXPORT_START",
-		});
-	} catch (error) {
-		console.error("[arena-export] Failed to start export:", error);
-	}
-});
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (message?.type !== "ARENA_EXPORT_DOWNLOAD") {
@@ -53,7 +84,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 		sendResponse({ ok: true, count: files.length });
 	})().catch((error) => {
-		console.error("[arena-export] Download error:", error);
+		console.error("[arena-utils] Download error:", error);
 		sendResponse({
 			ok: false,
 			error: error instanceof Error ? error.message : String(error),

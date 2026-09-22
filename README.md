@@ -1,18 +1,27 @@
-# ArenaExport
+# Arena Utils
 
-This extension exports messages from chat to arena.ai
+Chrome extension for arena.ai Direct chats.
 
-Export format - folder with markdown files:
+## Features
 
-- 1.md, 3.md, 5.md, ... - user messages
-- 2.md, 4.md, 6.md, ... - messages from LLM
+- Export the current chat to a folder of Markdown files (`1.md`, `2.md`, ...)
+- Disable autoscroll after the model replies
+- Saved prompts: click in the popup to insert into the composer
+- Message navigation panel in the top-right corner of the chat page
 
-The folder name corresponds to the chat id (in the url).
+The export folder name is the chat id from the URL.
+
+Odd files are user messages, even files are model replies — if the thread starts with a user message.
 
 ## Installation
 
-Go to the browser extensions page, turn on developer mode and load the folder with the extension.
+1. Open `chrome://extensions`
+2. Enable developer mode
+3. Load the extension folder
+4. Reload any open arena.ai tabs
 
 ## Usage
 
-Open the chat page on the arena.ai website and click on the extension button.
+- Toolbar icon opens the popup: autoscroll toggle, export, prompts
+- Right-click the extension → Options to edit prompts
+- On a chat page, use the `Messages` chip in the top-right to jump between turns

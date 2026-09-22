@@ -5,6 +5,107 @@
 
 	window.__arenaExportPageBridgeInstalled = true;
 
+	const AUTOSCROLL_KEY = "__arena_utils_disable_autoscroll";
+
+	function isAutoscrollDisabled() {
+		try {
+			return sessionStorage.getItem(AUTOSCROLL_KEY) === "1";
+		} catch (_error) {
+			return false;
+		}
+	}
+
+	function isFormField(el) {
+		const tag = el && el.tagName;
+		return tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT";
+	}
+
+	function isChatAutoscrollTarget(el) {
+		if (!el || el.nodeType !== 1 || isFormField(el)) {
+			return false;
+		}
+
+		if (el === document.documentElement || el === document.body || el === document.scrollingElement) {
+			return true;
+		}
+
+		if (el.closest && el.closest("ol.flex-col-reverse, ol.mt-8")) {
+			return true;
+		}
+
+		if (el.querySelector && el.querySelector("ol.flex-col-reverse, ol.mt-8")) {
+			return true;
+		}
+
+		return false;
+	}
+
+	const nativeScrollIntoView = Element.prototype.scrollIntoView;
+	const nativeScrollTo = Element.prototype.scrollTo;
+	const nativeScrollBy = Element.prototype.scrollBy;
+	const nativeWindowScrollTo = window.scrollTo.bind(window);
+	const nativeWindowScroll = window.scroll.bind(window);
+
+	Element.prototype.scrollIntoView = function (...args) {
+		if (isAutoscrollDisabled() && isChatAutoscrollTarget(this)) {
+			return;
+		}
+
+		return nativeScrollIntoView.apply(this, args);
+	};
+
+	Element.prototype.scrollTo = function (...args) {
+		if (isAutoscrollDisabled() && isChatAutoscrollTarget(this)) {
+			return;
+		}
+
+		return nativeScrollTo.apply(this, args);
+	};
+
+	Element.prototype.scrollBy = function (...args) {
+		if (isAutoscrollDisabled() && isChatAutoscrollTarget(this)) {
+			return;
+		}
+
+		return nativeScrollBy.apply(this, args);
+	};
+
+	window.scrollTo = function (...args) {
+		if (isAutoscrollDisabled()) {
+			return;
+		}
+
+		return nativeWindowScrollTo(...args);
+	};
+
+	window.scroll = function (...args) {
+		if (isAutoscrollDisabled()) {
+			return;
+		}
+
+		return nativeWindowScroll(...args);
+	};
+
+	const scrollTopDescriptor =
+		Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop") || Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTop");
+
+	if (scrollTopDescriptor?.set && scrollTopDescriptor?.get) {
+		Object.defineProperty(Element.prototype, "scrollTop", {
+			configurable: true,
+			enumerable: scrollTopDescriptor.enumerable,
+			get() {
+				return scrollTopDescriptor.get.call(this);
+			},
+			set(value) {
+				if (isAutoscrollDisabled() && isChatAutoscrollTarget(this)) {
+					return;
+				}
+
+				scrollTopDescriptor.set.call(this, value);
+			},
+		});
+	}
+
 	function normalizeText(value) {
 		return String(value || "")
 			.toLowerCase()
@@ -536,7 +637,7 @@
 
 		function addCandidate(path, text) {
 			const value = String(text || "").trim();
-			if (value.length < 20) {
+			if (value.length < 2) {
 				return;
 			}
 

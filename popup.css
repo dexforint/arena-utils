@@ -1,0 +1,100 @@
+:root {
+	color-scheme: dark;
+	font-family: system-ui, sans-serif;
+}
+
+html,
+body {
+	margin: 0;
+	width: 320px;
+	background: #10141d;
+	color: #e8eefc;
+}
+
+body {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	padding: 12px;
+}
+
+header {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+header span {
+	color: #9aa7c7;
+	font-size: 12px;
+}
+
+.check {
+	display: flex;
+	gap: 8px;
+	align-items: flex-start;
+	font-size: 13px;
+	line-height: 1.35;
+}
+
+button,
+.prompt {
+	border: 0;
+	border-radius: 8px;
+	cursor: pointer;
+	font: inherit;
+}
+
+#export {
+	padding: 8px 10px;
+	background: #7c9cff;
+	color: #10141d;
+	font-weight: 700;
+}
+
+#export:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+h2 {
+	margin: 0;
+	font-size: 12px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: #9aa7c7;
+}
+
+a {
+	color: #9db7ff;
+	font-size: 12px;
+}
+
+.prompts {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-top: 8px;
+}
+
+.prompt {
+	padding: 8px 10px;
+	background: #1a2130;
+	color: #e8eefc;
+	text-align: left;
+}
+
+.prompt:hover {
+	background: #232c40;
+}
+
+.empty {
+	color: #9aa7c7;
+	font-size: 12px;
+}
