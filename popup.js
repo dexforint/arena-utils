@@ -1,5 +1,6 @@
 const autoscroll = document.getElementById("autoscroll");
 const exportButton = document.getElementById("export");
+const pickFolderButton = document.getElementById("pick-folder");
 const promptsRoot = document.getElementById("prompts");
 const codebaseRoot = document.getElementById("codebase");
 const codebaseMeta = document.getElementById("codebase-meta");
@@ -59,18 +60,7 @@ function renderButtonList(root, items, tab, emptyText) {
 	}
 }
 
-async function init() {
-	const tab = await getActiveTab();
-	const stored = await chrome.storage.local.get({
-		disableAutoscroll: false,
-		prompts: [],
-		codebaseSnapshot: null,
-	});
-
-	autoscroll.checked = Boolean(stored.disableAutoscroll);
-	renderButtonList(promptsRoot, stored.prompts, tab, "No prompts yet. Open Edit to add some.");
-
-	const snapshot = stored.codebaseSnapshot;
+function renderCodebase(snapshot, tab) {
 	if (snapshot?.chunks?.length) {
 		codebaseMeta.textContent = `${snapshot.folderName} · ${snapshot.stats.parts} parts · ${snapshot.stats.characters} chars`;
 		renderButtonList(
@@ -82,10 +72,40 @@ async function init() {
 			tab,
 			"",
 		);
-	} else {
-		codebaseMeta.textContent = "";
-		renderButtonList(codebaseRoot, [], tab, "No snapshot yet. Open Prepare and select a folder.");
+		return;
 	}
+
+	codebaseMeta.textContent = "";
+	renderButtonList(codebaseRoot, [], tab, "No snapshot yet. Click Select folder…");
+}
+
+async function init() {
+	const tab = await getActiveTab();
+	const stored = await chrome.storage.local.get({
+		disableAutoscroll: false,
+		prompts: [],
+		codebaseSnapshot: null,
+	});
+
+	autoscroll.checked = Boolean(stored.disableAutoscroll);
+	renderButtonList(promptsRoot, stored.prompts, tab, "No prompts yet. Open Edit to add some.");
+	renderCodebase(stored.codebaseSnapshot, tab);
+
+	pickFolderButton.addEventListener("click", async () => {
+		await chrome.windows.create({
+			url: chrome.runtime.getURL("options.html#codebase"),
+			type: "popup",
+			width: 560,
+			height: 780,
+			focused: true,
+		});
+	});
+
+	chrome.storage.onChanged.addListener((changes, area) => {
+		if (area === "local" && changes.codebaseSnapshot) {
+			renderCodebase(changes.codebaseSnapshot.newValue, tab);
+		}
+	});
 
 	if (!isArenaTab(tab)) {
 		statusEl.textContent = "Open an arena.ai chat first";

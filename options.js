@@ -294,6 +294,10 @@ async function init() {
 	}
 
 	updateFolderLabel();
+
+	if (location.hash === "#codebase") {
+		document.getElementById("codebase")?.scrollIntoView();
+	}
 }
 
 void init();

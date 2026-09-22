@@ -104,3 +104,15 @@ a {
 	color: #9aa7c7;
 	font-size: 12px;
 }
+
+#pick-folder {
+	width: 100%;
+	padding: 8px 10px;
+	background: #1a2130;
+	color: #e8eefc;
+	text-align: left;
+}
+
+#pick-folder:hover {
+	background: #232c40;
+}
