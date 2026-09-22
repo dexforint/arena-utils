@@ -15,6 +15,8 @@ const pendingRequests = new Map();
 const HOST_ID = "__arena_utils_host__";
 const PAGE_STYLE_ID = "__arena_utils_page_style__";
 const AUTOSCROLL_KEY = "__arena_utils_disable_autoscroll";
+const ALLOW_SCROLL_KEY = "__arena_utils_allow_scroll";
+const MESSAGE_SCROLL_OFFSET = 16;
 
 const PANEL_CSS = `
 :host {
@@ -211,13 +213,12 @@ window.addEventListener("message", (event) => {
 		return;
 	}
 
-	const requestId = data.requestId;
-	const pending = pendingRequests.get(requestId);
+	const pending = pendingRequests.get(data.requestId);
 	if (!pending) {
 		return;
 	}
 
-	pendingRequests.delete(requestId);
+	pendingRequests.delete(data.requestId);
 	pending.resolve(data.results || {});
 });
 
@@ -291,7 +292,6 @@ function showToast(text) {
 	if (!toast) {
 		toast = document.createElement("div");
 		toast.id = "__arena_export_toast__";
-
 		Object.assign(toast.style, {
 			position: "fixed",
 			right: "16px",
@@ -310,13 +310,11 @@ function showToast(text) {
 			opacity: "0",
 			pointerEvents: "none",
 		});
-
 		document.documentElement.appendChild(toast);
 	}
 
 	toast.textContent = text;
 	toast.style.opacity = "1";
-
 	window.clearTimeout(showToast._timer);
 	showToast._timer = window.setTimeout(() => {
 		toast.style.opacity = "0";
@@ -327,28 +325,17 @@ showToast._timer = 0;
 
 function hasCopyIcon(button) {
 	const paths = Array.from(button.querySelectorAll("svg path")).map((node) => node.getAttribute("d") || "");
-	const hasFirstPath = paths.some((d) => d.includes("M19.4 20H9.6"));
-	const hasSecondPath = paths.some((d) => d.includes("M15 9V4.6"));
-	return hasFirstPath && hasSecondPath;
+	return paths.some((d) => d.includes("M19.4 20H9.6")) && paths.some((d) => d.includes("M15 9V4.6"));
 }
 
 function classifyMessageCopyButton(button) {
-	if (button.closest("[data-code-block='true']")) {
-		return null;
-	}
-
-	if (!hasCopyIcon(button)) {
+	if (button.closest("[data-code-block='true']") || !hasCopyIcon(button)) {
 		return null;
 	}
 
 	const classText = button.getAttribute("class") || "";
-
 	if (classText.includes("group-hover:opacity-100") || button.closest(".justify-end")) {
 		return "user";
-	}
-
-	if (button.getAttribute("data-slot") === "tooltip-trigger" || classText.includes("size-3")) {
-		return "assistant";
 	}
 
 	return "assistant";
@@ -359,15 +346,7 @@ function getMessageList() {
 }
 
 function classifyMessageRoot(el) {
-	if (!(el instanceof HTMLElement)) {
-		return null;
-	}
-
-	if (el.classList.contains("h-0")) {
-		return null;
-	}
-
-	if (!el.querySelector(".prose")) {
+	if (!(el instanceof HTMLElement) || el.classList.contains("h-0") || !el.querySelector(".prose")) {
 		return null;
 	}
 
@@ -381,13 +360,11 @@ function classifyMessageRoot(el) {
 
 function countMessageCopyButtonsInside(root) {
 	let count = 0;
-
 	for (const button of root.querySelectorAll("button")) {
 		if (classifyMessageCopyButton(button)) {
 			count += 1;
 		}
 	}
-
 	return count;
 }
 
@@ -423,21 +400,17 @@ function compareNodesInDocumentOrder(a, b) {
 	}
 
 	const position = a.compareDocumentPosition(b);
-
 	if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
 		return -1;
 	}
-
 	if (position & Node.DOCUMENT_POSITION_PRECEDING) {
 		return 1;
 	}
-
 	return 0;
 }
 
 function getVisualPosition(node) {
 	const rect = node.getBoundingClientRect();
-
 	return {
 		top: rect.top + window.scrollY,
 		left: rect.left + window.scrollX,
@@ -448,15 +421,12 @@ function sortEntriesByVisualOrder(entries) {
 	return entries.slice().sort((a, b) => {
 		const aPos = getVisualPosition(a.root);
 		const bPos = getVisualPosition(b.root);
-
 		if (Math.abs(aPos.top - bPos.top) > 4) {
 			return aPos.top - bPos.top;
 		}
-
 		if (Math.abs(aPos.left - bPos.left) > 4) {
 			return aPos.left - bPos.left;
 		}
-
 		return compareNodesInDocumentOrder(a.root, b.root);
 	});
 }
@@ -476,7 +446,6 @@ function sortMessages(entries, list) {
 	};
 
 	const reverse = window.getComputedStyle(list).flexDirection.includes("reverse");
-
 	return entries.slice().sort((a, b) => {
 		const delta = indexOf(a.root) - indexOf(b.root);
 		return reverse ? -delta : delta;
@@ -490,17 +459,11 @@ function collectMessagesFromList() {
 	}
 
 	const entries = [];
-
 	for (const child of list.children) {
 		const role = classifyMessageRoot(child);
-		if (!role) {
-			continue;
+		if (role) {
+			entries.push({ root: child, role });
 		}
-
-		entries.push({
-			root: child,
-			role,
-		});
 	}
 
 	return sortMessages(entries, list);
@@ -508,11 +471,10 @@ function collectMessagesFromList() {
 
 function collectMessagesFromCopyButtons() {
 	const root = document.querySelector("main") || document.body;
-	const buttons = Array.from(root.querySelectorAll("button"));
 	const entries = [];
 	const usedRoots = new Set();
 
-	for (const button of buttons) {
+	for (const button of root.querySelectorAll("button")) {
 		const role = classifyMessageCopyButton(button);
 		if (!role) {
 			continue;
@@ -524,10 +486,7 @@ function collectMessagesFromCopyButtons() {
 		}
 
 		usedRoots.add(container);
-		entries.push({
-			root: container,
-			role,
-		});
+		entries.push({ root: container, role });
 	}
 
 	return sortMessages(entries, getMessageList());
@@ -535,11 +494,7 @@ function collectMessagesFromCopyButtons() {
 
 function collectMessages() {
 	const fromList = collectMessagesFromList();
-	if (fromList.length > 0) {
-		return fromList;
-	}
-
-	return collectMessagesFromCopyButtons();
+	return fromList.length > 0 ? fromList : collectMessagesFromCopyButtons();
 }
 
 function languageFromClassName(value) {
@@ -570,9 +525,8 @@ function domToMarkdown(root) {
 				.join("");
 
 		if (/^h[1-6]$/.test(tag)) {
-			const level = Number(tag.slice(1));
 			const text = inner().trim();
-			return text ? `${"#".repeat(level)} ${text}\n\n` : "";
+			return text ? `${"#".repeat(Number(tag.slice(1)))} ${text}\n\n` : "";
 		}
 
 		if (tag === "p") {
@@ -631,10 +585,7 @@ function domToMarkdown(root) {
 			return `${Array.from(node.children)
 				.map((item, index) => {
 					const block = serialize(item).trim();
-					if (!block) {
-						return "";
-					}
-					return `${block.replace(/^[-*]\s/, `${index + 1}. `)}\n`;
+					return block ? `${block.replace(/^[-*]\s/, `${index + 1}. `)}\n` : "";
 				})
 				.join("")}\n`;
 		}
@@ -644,12 +595,10 @@ function domToMarkdown(root) {
 			if (!block) {
 				return "";
 			}
-
 			const lines = block.split("\n");
 			if (lines.length === 1) {
 				return `- ${lines[0]}\n`;
 			}
-
 			return `- ${lines[0]}\n${lines
 				.slice(1)
 				.map((line) => (line ? `  ${line}` : ""))
@@ -661,7 +610,6 @@ function domToMarkdown(root) {
 			if (!text) {
 				return "";
 			}
-
 			return `${text
 				.split("\n")
 				.map((line) => (line ? `> ${line}` : ">"))
@@ -754,22 +702,16 @@ async function runExport() {
 		const debugRows = [];
 
 		for (let i = 0; i < orderedEntries.length; i += 1) {
-			const id = requestItems[i].id;
-			const result = results[id];
+			const result = results[requestItems[i].id];
 			const fallbackText = markdownFromDom(orderedEntries[i].root);
 			const text = result?.ok && result.text ? normalizeMarkdown(result.text) : fallbackText;
 
 			if (!text.trim()) {
 				console.log("[arena-utils] Failed container:", orderedEntries[i].root);
-				console.log("[arena-utils] Top candidates:", result?.top || result);
 				throw new Error(`Didn't find Markdown for message ${i + 1}`);
 			}
 
-			files.push({
-				name: `${i + 1}.md`,
-				text,
-			});
-
+			files.push({ name: `${i + 1}.md`, text });
 			debugRows.push({
 				n: i + 1,
 				role: orderedEntries[i].role,
@@ -801,7 +743,6 @@ async function runExport() {
 		for (const node of document.querySelectorAll("[data-arena-export-id]")) {
 			node.removeAttribute("data-arena-export-id");
 		}
-
 		exportInProgress = false;
 	}
 }
@@ -813,8 +754,7 @@ function getComposerTextarea() {
 }
 
 function setTextareaValue(textarea, value) {
-	const prototype = window.HTMLTextAreaElement.prototype;
-	const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+	const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value");
 	const nativeSetter = descriptor && descriptor.set;
 
 	if (textarea._valueTracker) {
@@ -841,16 +781,13 @@ function setTextareaValue(textarea, value) {
 function insertPrompt(text) {
 	const value = String(text || "");
 	const textarea = getComposerTextarea();
-
 	if (!textarea) {
 		throw new Error("Composer textarea not found");
 	}
 
 	const start = textarea.selectionStart ?? textarea.value.length;
 	const end = textarea.selectionEnd ?? textarea.value.length;
-	const next = `${textarea.value.slice(0, start)}${value}${textarea.value.slice(end)}`;
-
-	setTextareaValue(textarea, next);
+	setTextareaValue(textarea, `${textarea.value.slice(0, start)}${value}${textarea.value.slice(end)}`);
 	textarea.focus();
 
 	const cursor = start + value.length;
@@ -861,8 +798,7 @@ function insertPrompt(text) {
 	}
 
 	textarea.style.height = "auto";
-	const maxHeight = Math.round(window.innerHeight * 0.4);
-	textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+	textarea.style.height = `${Math.min(textarea.scrollHeight, Math.round(window.innerHeight * 0.4))}px`;
 	showToast("Prompt inserted");
 }
 
@@ -872,6 +808,87 @@ function writeAutoscrollFlag(disabled) {
 	} catch (_error) {
 		/* ignore */
 	}
+}
+
+function isRadixScrollbarHideCss(text) {
+	const value = String(text || "")
+		.replace(/\s+/g, "")
+		.toLowerCase();
+	return value.includes("[data-radix-scroll-area-viewport]") && (value.includes("scrollbar-width:none") || value.includes("::-webkit-scrollbar{display:none"));
+}
+
+function stripScrollbarSheet(sheet) {
+	let rules;
+	try {
+		rules = sheet.cssRules;
+	} catch (_error) {
+		return;
+	}
+
+	for (let i = rules.length - 1; i >= 0; i -= 1) {
+		const rule = rules[i];
+		const cssText = String(rule.cssText || "");
+		const selector = String(rule.selectorText || "");
+		if (selector.includes("[data-radix-scroll-area-viewport]") || isRadixScrollbarHideCss(cssText)) {
+			try {
+				sheet.deleteRule(i);
+			} catch (_error) {
+				/* ignore */
+			}
+		}
+	}
+}
+
+function stripScrollbarRoot(root) {
+	if (!root) {
+		return;
+	}
+
+	if (root.styleSheets) {
+		for (const sheet of Array.from(root.styleSheets)) {
+			stripScrollbarSheet(sheet);
+		}
+	}
+
+	if (root.adoptedStyleSheets) {
+		for (const sheet of root.adoptedStyleSheets) {
+			stripScrollbarSheet(sheet);
+		}
+	}
+
+	const styleNodes = root.querySelectorAll ? root.querySelectorAll("style") : [];
+	for (const styleEl of styleNodes) {
+		if (!(styleEl instanceof HTMLStyleElement) || !isRadixScrollbarHideCss(styleEl.textContent)) {
+			continue;
+		}
+
+		try {
+			if (styleEl.sheet) {
+				stripScrollbarSheet(styleEl.sheet);
+			}
+		} catch (_error) {
+			/* ignore */
+		}
+
+		if (isRadixScrollbarHideCss(styleEl.textContent)) {
+			styleEl.remove();
+		}
+	}
+
+	const treeRoot = root.body || root.documentElement || root;
+	if (!treeRoot?.querySelectorAll) {
+		return;
+	}
+
+	for (const el of treeRoot.querySelectorAll("*")) {
+		if (el.shadowRoot) {
+			stripScrollbarRoot(el.shadowRoot);
+		}
+	}
+}
+
+function restoreNativeScrollbars() {
+	stripScrollbarRoot(document);
 }
 
 function ensurePageStyle() {
@@ -893,7 +910,7 @@ function ensurePageStyle() {
 
 function getPanelEls() {
 	const host = document.getElementById(HOST_ID);
-	if (!host || !host.shadowRoot) {
+	if (!host?.shadowRoot) {
 		return null;
 	}
 
@@ -928,7 +945,6 @@ function highlightMessage(root) {
 	document.querySelectorAll(".__arena-utils-highlight").forEach((node) => {
 		node.classList.remove("__arena-utils-highlight");
 	});
-
 	root.classList.add("__arena-utils-highlight");
 	window.clearTimeout(highlightTimer);
 	highlightTimer = window.setTimeout(() => {
@@ -940,14 +956,11 @@ function getScrollParent(el) {
 	let node = el?.parentElement;
 
 	while (node && node !== document.body && node !== document.documentElement) {
-		const style = window.getComputedStyle(node);
-		const overflowY = style.overflowY;
+		const overflowY = window.getComputedStyle(node).overflowY;
 		const canScroll = overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay";
-
 		if (canScroll && node.scrollHeight > node.clientHeight + 8) {
 			return node;
 		}
-
 		node = node.parentElement;
 	}
 
@@ -957,36 +970,6 @@ function getScrollParent(el) {
 function isWindowScroller(scroller) {
 	return !scroller || scroller === document.documentElement || scroller === document.body || scroller === document.scrollingElement;
 }
-
-function scrollToMessageStart(root) {
-	const scroller = getScrollParent(root);
-	const rootRect = root.getBoundingClientRect();
-
-	if (isWindowScroller(scroller)) {
-		const top = window.scrollY + rootRect.top - MESSAGE_SCROLL_OFFSET;
-		window.scrollTo({
-			top: Math.max(0, top),
-			behavior: "smooth",
-		});
-		return;
-	}
-
-	const scrollerRect = scroller.getBoundingClientRect();
-	const top = scroller.scrollTop + (rootRect.top - scrollerRect.top) - MESSAGE_SCROLL_OFFSET;
-
-	if (typeof scroller.scrollTo === "function") {
-		scroller.scrollTo({
-			top: Math.max(0, top),
-			behavior: "smooth",
-		});
-		return;
-	}
-
-	scroller.scrollTop = Math.max(0, top);
-}
-
-const ALLOW_SCROLL_KEY = "__arena_utils_allow_scroll";
-const MESSAGE_SCROLL_OFFSET = 16;
 
 function withAllowedScroll(fn) {
 	try {
@@ -1006,36 +989,26 @@ function withAllowedScroll(fn) {
 	}
 }
 
-function isWindowScroller(scroller) {
-	return !scroller || scroller === document.documentElement || scroller === document.body || scroller === document.scrollingElement;
-}
-
 function scrollToMessageStart(root) {
 	const scroller = getScrollParent(root);
 	const rootRect = root.getBoundingClientRect();
 
 	withAllowedScroll(() => {
 		if (isWindowScroller(scroller)) {
-			const top = window.scrollY + rootRect.top - MESSAGE_SCROLL_OFFSET;
 			window.scrollTo({
-				top: Math.max(0, top),
+				top: Math.max(0, window.scrollY + rootRect.top - MESSAGE_SCROLL_OFFSET),
 				behavior: "smooth",
 			});
 			return;
 		}
 
 		const scrollerRect = scroller.getBoundingClientRect();
-		const top = scroller.scrollTop + (rootRect.top - scrollerRect.top) - MESSAGE_SCROLL_OFFSET;
-
+		const top = Math.max(0, scroller.scrollTop + (rootRect.top - scrollerRect.top) - MESSAGE_SCROLL_OFFSET);
 		if (typeof scroller.scrollTo === "function") {
-			scroller.scrollTo({
-				top: Math.max(0, top),
-				behavior: "smooth",
-			});
+			scroller.scrollTo({ top, behavior: "smooth" });
 			return;
 		}
-
-		scroller.scrollTop = Math.max(0, top);
+		scroller.scrollTop = top;
 	});
 }
 
@@ -1053,12 +1026,7 @@ function getBottomScrollTop(scroller) {
 		return getScrollerMaxTop(scroller);
 	}
 
-	const direction = window.getComputedStyle(scroller).flexDirection;
-	if (direction.includes("reverse")) {
-		return 0;
-	}
-
-	return getScrollerMaxTop(scroller);
+	return window.getComputedStyle(scroller).flexDirection.includes("reverse") ? 0 : getScrollerMaxTop(scroller);
 }
 
 function scrollToChatBottom() {
@@ -1068,18 +1036,12 @@ function scrollToChatBottom() {
 
 	withAllowedScroll(() => {
 		if (isWindowScroller(scroller)) {
-			window.scrollTo({
-				top,
-				behavior: "smooth",
-			});
+			window.scrollTo({ top, behavior: "smooth" });
 			return;
 		}
 
 		if (typeof scroller.scrollTo === "function") {
-			scroller.scrollTo({
-				top,
-				behavior: "smooth",
-			});
+			scroller.scrollTo({ top, behavior: "smooth" });
 			return;
 		}
 
@@ -1098,20 +1060,12 @@ function getViewportForMessages() {
 	const list = getMessageList();
 	const scroller = list ? getScrollParent(list) : null;
 
-	if (!scroller || scroller === document.documentElement || scroller === document.body || scroller === document.scrollingElement) {
-		return {
-			top: 0,
-			bottom: window.innerHeight,
-			height: window.innerHeight,
-		};
+	if (isWindowScroller(scroller)) {
+		return { top: 0, bottom: window.innerHeight, height: window.innerHeight };
 	}
 
 	const rect = scroller.getBoundingClientRect();
-	return {
-		top: rect.top,
-		bottom: rect.bottom,
-		height: rect.height,
-	};
+	return { top: rect.top, bottom: rect.bottom, height: rect.height };
 }
 
 function getCurrentMessageIndex(messages) {
@@ -1151,11 +1105,9 @@ function getCurrentMessageIndex(messages) {
 	if (current >= 0) {
 		return current;
 	}
-
 	if (best >= 0) {
 		return best;
 	}
-
 	return currentIndex >= 0 && currentIndex < messages.length ? currentIndex : -1;
 }
 
@@ -1166,7 +1118,6 @@ function scrollChildIntoContainer(child, container) {
 
 	const childRect = child.getBoundingClientRect();
 	const boxRect = container.getBoundingClientRect();
-
 	if (childRect.top < boxRect.top) {
 		container.scrollTop -= boxRect.top - childRect.top;
 	} else if (childRect.bottom > boxRect.bottom) {
@@ -1188,11 +1139,9 @@ function updateActiveItem() {
 	if (els.pos) {
 		els.pos.textContent = total === 0 ? "No messages" : `Message ${index >= 0 ? index + 1 : "–"} of ${total}`;
 	}
-
 	if (els.prev) {
 		els.prev.disabled = total === 0 || index <= 0;
 	}
-
 	if (els.next) {
 		els.next.disabled = total === 0 || index < 0 || index >= total - 1;
 	}
@@ -1221,7 +1170,6 @@ function jumpToMessage(root, index = null) {
 function stepMessage(delta) {
 	const messages = collectMessages();
 	cachedMessages = messages;
-
 	if (messages.length === 0) {
 		return false;
 	}
@@ -1242,11 +1190,7 @@ function stepMessage(delta) {
 }
 
 function syncCurrentFromViewport() {
-	if (Date.now() < pinnedUntil) {
-		return;
-	}
-
-	if (cachedMessages.length === 0) {
+	if (Date.now() < pinnedUntil || cachedMessages.length === 0) {
 		return;
 	}
 
@@ -1271,7 +1215,6 @@ function onScrollerScroll() {
 function ensureScrollWatch() {
 	const list = getMessageList();
 	const scroller = list ? getScrollParent(list) : document.scrollingElement || document.documentElement;
-
 	if (boundScroller === scroller) {
 		return;
 	}
@@ -1281,7 +1224,6 @@ function ensureScrollWatch() {
 	}
 
 	boundScroller = scroller;
-
 	if (scroller && scroller !== document && scroller !== window) {
 		scroller.addEventListener("scroll", onScrollerScroll, { passive: true });
 	}
@@ -1293,11 +1235,7 @@ function isTypingTarget(el) {
 	}
 
 	const tag = el.tagName;
-	if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
-		return true;
-	}
-
-	if (el.isContentEditable) {
+	if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable) {
 		return true;
 	}
 
@@ -1313,11 +1251,7 @@ function onKeyDown(event) {
 		return;
 	}
 
-	if (isTypingTarget(event.target)) {
-		return;
-	}
-
-	if (cachedMessages.length === 0 && collectMessages().length === 0) {
+	if (isTypingTarget(event.target) || (cachedMessages.length === 0 && collectMessages().length === 0)) {
 		return;
 	}
 
@@ -1333,7 +1267,6 @@ function renderPanelList() {
 
 	cachedMessages = collectMessages();
 	ensureScrollWatch();
-	els.count.textContent = String(cachedMessages.length);
 
 	const signature = cachedMessages.map((item, index) => `${index}:${item.role}:${previewFromRoot(item.root).slice(0, 80)}`).join("|");
 
@@ -1393,12 +1326,12 @@ function ensurePanel() {
 				<span class="chevron">${panelCollapsed ? "▾" : "▴"}</span>
 			</button>
 			<div class="body">
-        <div class="nav">
-          <button class="nav-btn" type="button" data-dir="-1" title="Previous message (↑)">↑</button>
-          <span class="pos">–/–</span>
-          <button class="nav-btn" type="button" data-dir="1" title="Next message (↓)">↓</button>
-          <button class="nav-btn" type="button" data-bottom title="Scroll to bottom">⤓</button>
-        </div>
+				<div class="nav">
+					<button class="nav-btn" type="button" data-dir="-1" title="Previous message (↑)">↑</button>
+					<span class="pos">–/–</span>
+					<button class="nav-btn" type="button" data-dir="1" title="Next message (↓)">↓</button>
+					<button class="nav-btn" type="button" data-bottom title="Scroll to bottom">⤓</button>
+				</div>
 				<div class="list"></div>
 				<div class="hint">↑ / ↓ jump between messages</div>
 			</div>
@@ -1408,17 +1341,14 @@ function ensurePanel() {
 	shadow.querySelector(".toggle").addEventListener("click", () => {
 		setPanelCollapsed(!panelCollapsed);
 	});
-
 	shadow.querySelector('[data-dir="-1"]').addEventListener("click", (event) => {
 		event.preventDefault();
 		stepMessage(-1);
 	});
-
 	shadow.querySelector('[data-dir="1"]').addEventListener("click", (event) => {
 		event.preventDefault();
 		stepMessage(1);
 	});
-
 	shadow.querySelector("[data-bottom]").addEventListener("click", (event) => {
 		event.preventDefault();
 		scrollToChatBottom();
@@ -1437,6 +1367,7 @@ function scheduleRefresh() {
 			currentIndex = -1;
 		}
 
+		restoreNativeScrollbars();
 		ensurePanel();
 		renderPanelList();
 	}, 200);
@@ -1444,6 +1375,7 @@ function scheduleRefresh() {
 
 async function init() {
 	ensurePageStyle();
+	restoreNativeScrollbars();
 
 	const stored = await chrome.storage.local.get({
 		disableAutoscroll: false,
@@ -1456,11 +1388,9 @@ async function init() {
 	setPanelCollapsed(panelCollapsed, false);
 	renderPanelList();
 
-	const observer = new MutationObserver(() => {
+	new MutationObserver(() => {
 		scheduleRefresh();
-	});
-
-	observer.observe(document.documentElement, {
+	}).observe(document.documentElement, {
 		childList: true,
 		subtree: true,
 	});
