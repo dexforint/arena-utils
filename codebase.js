@@ -20,7 +20,7 @@
 	];
 
 	function quoted(value) {
-		return JSON.stringify(String(value ?? ""), (key, item) => item);
+		return JSON.stringify(String(value ?? ""));
 	}
 
 	function splitPatternLines(value) {

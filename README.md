@@ -87,6 +87,7 @@ arena.ai hides the Radix viewport scrollbar. The extension removes that rule so 
 - `activeTab`, `downloads` — export Markdown
 - `storage`, `unlimitedStorage` — settings, prompts, snapshots
 - `https://arena.ai/*` — content scripts on chat pages
+- `downloads` — export Markdown
 
 Folder access uses the browser directory picker, not an arbitrary filesystem path.
 

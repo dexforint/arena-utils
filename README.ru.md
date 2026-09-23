@@ -87,6 +87,7 @@ arena.ai прячет скроллбар у Radix viewport. Расширение
 - `activeTab`, `downloads` — экспорт Markdown
 - `storage`, `unlimitedStorage` — настройки, промпты, снимки
 - `https://arena.ai/*` — скрипты на страницах чата
+- `downloads` — экспорт Markdown
 
 Доступ к папке — через системный диалог выбора каталога, не через произвольный путь на диске.
 

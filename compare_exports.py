@@ -182,7 +182,6 @@ def preview_line(text: str | None, max_length: int = 180) -> str:
     return prepared
 
 def normalize_markdown_semantic(text: str) -> str:
-    import re
 
     text = (
         text.replace("\ufeff", "")

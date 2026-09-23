@@ -27,7 +27,7 @@ const DEFAULT_PROMPTS = [
 ];
 
 chrome.runtime.onInstalled.addListener(async () => {
-	const current = await chrome.storage.local.get(["prompts", "disableAutoscroll", "panelCollapsed"]);
+	const current = await chrome.storage.local.get(["prompts", "disableAutoscroll", "panelCollapsed", "collapseCodeBlocks"]);
 
 	const patch = {};
 
@@ -43,12 +43,12 @@ chrome.runtime.onInstalled.addListener(async () => {
 		patch.panelCollapsed = true;
 	}
 
-	if (Object.keys(patch).length > 0) {
-		await chrome.storage.local.set(patch);
-	}
-
 	if (typeof current.collapseCodeBlocks !== "boolean") {
 		patch.collapseCodeBlocks = true;
+	}
+
+	if (Object.keys(patch).length > 0) {
+		await chrome.storage.local.set(patch);
 	}
 });
 
@@ -61,8 +61,65 @@ function sanitizeFileName(value) {
 	);
 }
 
-function makeDataUrl(text) {
-	return `data:text/markdown;charset=utf-8,${encodeURIComponent(text)}`;
+function waitForDownload(downloadId) {
+	return new Promise((resolve, reject) => {
+		let settled = false;
+
+		const finish = (ok, error) => {
+			if (settled) {
+				return;
+			}
+
+			settled = true;
+			chrome.downloads.onChanged.removeListener(onChanged);
+
+			if (ok) {
+				resolve();
+			} else {
+				reject(new Error(error || "Download interrupted"));
+			}
+		};
+
+		const onChanged = (delta) => {
+			if (delta.id !== downloadId) {
+				return;
+			}
+
+			if (delta.state?.current === "complete") {
+				finish(true);
+			} else if (delta.state?.current === "interrupted") {
+				finish(false, delta.error?.current);
+			}
+		};
+
+		chrome.downloads.onChanged.addListener(onChanged);
+
+		void chrome.downloads.search({ id: downloadId }).then(([item]) => {
+			if (item?.state === "complete") {
+				finish(true);
+			} else if (item?.state === "interrupted") {
+				finish(false, item.error);
+			}
+		});
+	});
+}
+
+async function downloadMarkdown(filename, text) {
+	const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
+	const url = URL.createObjectURL(blob);
+
+	try {
+		const downloadId = await chrome.downloads.download({
+			url,
+			filename,
+			saveAs: false,
+			conflictAction: "uniquify",
+		});
+
+		await waitForDownload(downloadId);
+	} finally {
+		URL.revokeObjectURL(url);
+	}
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -77,13 +134,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 		for (const file of files) {
 			const fileName = sanitizeFileName(file.name || "file.md");
 			const text = String(file.text ?? "").replace(/\r\n/g, "\n");
-
-			await chrome.downloads.download({
-				url: makeDataUrl(text),
-				filename: `${folderName}/${fileName}`,
-				saveAs: false,
-				conflictAction: "uniquify",
-			});
+			await downloadMarkdown(`${folderName}/${fileName}`, text);
 		}
 
 		sendResponse({ ok: true, count: files.length });

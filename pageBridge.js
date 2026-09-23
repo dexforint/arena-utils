@@ -152,6 +152,19 @@
 			.trim();
 	}
 
+	function prefixListItem(block, marker, indent) {
+		const lines = String(block || "").split("\n");
+		return lines
+			.map((line, index) => {
+				if (index === 0) {
+					return `${marker}${line}`;
+				}
+
+				return line ? `${indent}${line}` : "";
+			})
+			.join("\n");
+	}
+
 	function escapeInlineCode(text) {
 		const value = String(text || "");
 		const matches = value.match(/`+/g) || [];
@@ -388,27 +401,15 @@
 			}
 
 			if (type === "li") {
-				const block = serializeReactNode(children, "block", depth + 1).trim();
-				if (!block) {
-					return "";
-				}
-
-				const lines = block.split("\n");
-				if (lines.length === 1) {
-					return `- ${lines[0]}`;
-				}
-
-				return `- ${lines[0]}\n${lines
-					.slice(1)
-					.map((line) => `  ${line}`)
-					.join("\n")}`;
+				return serializeReactNode(children, "block", depth + 1).trim();
 			}
 
 			if (type === "ul") {
 				const items = []
 					.concat(children || [])
-					.map((item) => serializeReactNode(item, "block", depth + 1))
-					.filter(Boolean);
+					.map((item) => serializeReactNode(item, "block", depth + 1).trim())
+					.filter(Boolean)
+					.map((block) => prefixListItem(block, "- ", "  "));
 
 				return items.join("\n");
 			}
@@ -416,24 +417,17 @@
 			if (type === "ol") {
 				const array = Array.isArray(children) ? children : [children];
 				const items = [];
+				let index = 0;
 
-				for (let i = 0; i < array.length; i += 1) {
-					const block = serializeReactNode(array[i], "block", depth + 1).trim();
+				for (const child of array) {
+					const block = serializeReactNode(child, "block", depth + 1).trim();
 					if (!block) {
 						continue;
 					}
 
-					const lines = block.split("\n");
-					if (lines.length === 1) {
-						items.push(`${i + 1}. ${lines[0]}`);
-					} else {
-						items.push(
-							`${i + 1}. ${lines[0]}\n${lines
-								.slice(1)
-								.map((line) => `   ${line}`)
-								.join("\n")}`,
-						);
-					}
+					index += 1;
+					const marker = `${index}. `;
+					items.push(prefixListItem(block, marker, " ".repeat(marker.length)));
 				}
 
 				return items.join("\n");
