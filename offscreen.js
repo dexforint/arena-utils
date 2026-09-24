@@ -1,91 +1,65 @@
-const DOWNLOAD_TYPE = "ARENA_OFFSCREEN_DOWNLOAD";
-const DOWNLOAD_TIMEOUT_MS = 60000;
+const CREATE_BLOBS_TYPE = "ARENA_OFFSCREEN_CREATE_BLOBS";
+const REVOKE_BLOBS_TYPE = "ARENA_OFFSCREEN_REVOKE_BLOBS";
 
-function waitForDownload(downloadId, timeoutMs = DOWNLOAD_TIMEOUT_MS) {
-	return new Promise((resolve) => {
-		const timer = setTimeout(() => {
-			chrome.downloads.onChanged.removeListener(listener);
-			resolve("timeout");
-		}, timeoutMs);
+// URL'ы, созданные этим offscreen-документом. Живём до отзыва.
+const activeUrls = new Set();
 
-		function listener(delta) {
-			if (delta.id !== downloadId || !delta.state) {
-				return;
-			}
-
-			const state = delta.state.current;
-			if (state !== "complete" && state !== "interrupted") {
-				return;
-			}
-
-			clearTimeout(timer);
-			chrome.downloads.onChanged.removeListener(listener);
-			resolve(state);
-		}
-
-		chrome.downloads.onChanged.addListener(listener);
-	});
-}
-
-async function downloadOne(folderName, file) {
-	const blob = new Blob([String(file.text ?? "")], {
+function createBlobUrl(text) {
+	const blob = new Blob([String(text ?? "")], {
 		type: "text/markdown;charset=utf-8",
 	});
 	const url = URL.createObjectURL(blob);
-
-	try {
-		const downloadId = await chrome.downloads.download({
-			url,
-			filename: `${folderName}/${file.name}`,
-			saveAs: false,
-			conflictAction: "uniquify",
-		});
-
-		const state = await waitForDownload(downloadId);
-		if (state === "interrupted") {
-			return { ok: false, name: file.name, error: "Download interrupted" };
-		}
-
-		return { ok: true, name: file.name };
-	} catch (error) {
-		return {
-			ok: false,
-			name: file.name,
-			error: error instanceof Error ? error.message : String(error),
-		};
-	} finally {
-		URL.revokeObjectURL(url);
-	}
+	activeUrls.add(url);
+	return url;
 }
 
-async function handleDownload(message) {
-	const folderName = String(message.folderName || "arena-export");
-	const files = Array.isArray(message.files) ? message.files : [];
-
-	const results = await Promise.all(files.map((file) => downloadOne(folderName, file)));
-
-	const failed = results.filter((item) => !item.ok);
-
-	return {
-		ok: failed.length === 0,
-		count: results.length,
-		failed,
-	};
-}
-
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-	if (message?.type !== DOWNLOAD_TYPE) {
+function revokeBlobUrl(url) {
+	if (!activeUrls.has(url)) {
 		return;
 	}
 
-	handleDownload(message)
-		.then(sendResponse)
-		.catch((error) => {
+	URL.revokeObjectURL(url);
+	activeUrls.delete(url);
+}
+
+function revokeAll() {
+	for (const url of Array.from(activeUrls)) {
+		URL.revokeObjectURL(url);
+	}
+	activeUrls.clear();
+}
+
+// При закрытии документа браузер сам освободит URL'ы, но подчистимся явно.
+window.addEventListener("pagehide", revokeAll);
+window.addEventListener("unload", revokeAll);
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+	if (message?.type === CREATE_BLOBS_TYPE) {
+		try {
+			const files = Array.isArray(message.files) ? message.files : [];
+			const created = files.map((file) => ({
+				name: String(file?.name || "file.md"),
+				url: createBlobUrl(file?.text),
+			}));
+
+			sendResponse({ ok: true, files: created });
+		} catch (error) {
 			sendResponse({
 				ok: false,
 				error: error instanceof Error ? error.message : String(error),
 			});
-		});
+		}
+		return;
+	}
 
-	return true;
+	if (message?.type === REVOKE_BLOBS_TYPE) {
+		const urls = Array.isArray(message.urls) ? message.urls : [];
+
+		for (const url of urls) {
+			revokeBlobUrl(url);
+		}
+
+		sendResponse({ ok: true });
+		return;
+	}
 });

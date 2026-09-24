@@ -29,12 +29,18 @@ const DEFAULT_PROMPTS = [
 ];
 
 const OFFSCREEN_PATH = "offscreen.html";
-const OFFSCREEN_DOWNLOAD_TYPE = "ARENA_OFFSCREEN_DOWNLOAD";
+const OFFSCREEN_CREATE_BLOBS_TYPE = "ARENA_OFFSCREEN_CREATE_BLOBS";
+const OFFSCREEN_REVOKE_BLOBS_TYPE = "ARENA_OFFSCREEN_REVOKE_BLOBS";
 const OFFSCREEN_IDLE_MS = 5000;
 const OFFSCREEN_REPLY_TIMEOUT_MS = 120000;
+const DOWNLOAD_COMPLETE_TIMEOUT_MS = 60000;
 
 let offscreenSetupPromise = null;
 let offscreenCloseTimer = 0;
+
+// ---------------------------------------------------------------------------
+// Установка / миграция дефолтов
+// ---------------------------------------------------------------------------
 
 chrome.runtime.onInstalled.addListener(async () => {
 	const current = await chrome.storage.local.get(["prompts", "disableAutoscroll", "panelCollapsed", "collapseCodeBlocks", "chatTemplates"]);
@@ -66,6 +72,10 @@ chrome.runtime.onInstalled.addListener(async () => {
 	}
 });
 
+// ---------------------------------------------------------------------------
+// Offscreen document lifecycle
+// ---------------------------------------------------------------------------
+
 async function hasOffscreenDocument() {
 	if (typeof chrome.runtime.getContexts !== "function") {
 		return false;
@@ -93,7 +103,7 @@ async function ensureOffscreenDocument() {
 			.createDocument({
 				url: OFFSCREEN_PATH,
 				reasons: ["BLOBS"],
-				justification: "Create blob URLs to save exported chats as files.",
+				justification: "Create blob URLs so the service worker can save exported chats as files.",
 			})
 			.catch((error) => {
 				// Гонка: документ уже создан другим вызовом.
@@ -139,6 +149,228 @@ function sendMessageWithTimeout(message, timeoutMs = OFFSCREEN_REPLY_TIMEOUT_MS)
 	]);
 }
 
+// ---------------------------------------------------------------------------
+// Blob URL создаётся в offscreen, скачивание — здесь, в SW.
+// ---------------------------------------------------------------------------
+
+async function createBlobUrlsInOffscreen(payload) {
+	await ensureOffscreenDocument();
+
+	const response = await sendMessageWithTimeout({
+		type: OFFSCREEN_CREATE_BLOBS_TYPE,
+		files: payload,
+	});
+
+	if (!response?.ok || !Array.isArray(response.files)) {
+		throw new Error(response?.error || "Offscreen did not return blob URLs");
+	}
+
+	return response.files;
+}
+
+function revokeBlobUrlsInOffscreen(urls) {
+	if (!Array.isArray(urls) || urls.length === 0) {
+		return;
+	}
+
+	void sendMessageWithTimeout({
+		type: OFFSCREEN_REVOKE_BLOBS_TYPE,
+		urls,
+	}).catch(() => {
+		/* offscreen мог уже закрыться — тогда URL'ы освободятся сами */
+	});
+}
+
+function waitForDownloadCompletion(downloadId, timeoutMs = DOWNLOAD_COMPLETE_TIMEOUT_MS) {
+	return new Promise((resolve) => {
+		let timer = 0;
+
+		function listener(delta) {
+			if (delta.id !== downloadId || !delta.state) {
+				return;
+			}
+
+			const state = delta.state.current;
+			if (state !== "complete" && state !== "interrupted") {
+				return;
+			}
+
+			clearTimeout(timer);
+			chrome.downloads.onChanged.removeListener(listener);
+			resolve(state);
+		}
+
+		timer = setTimeout(() => {
+			chrome.downloads.onChanged.removeListener(listener);
+			resolve("timeout");
+		}, timeoutMs);
+
+		chrome.downloads.onChanged.addListener(listener);
+	});
+}
+
+async function downloadOneViaBlobUrl(folderName, file, blobUrl) {
+	try {
+		const downloadId = await chrome.downloads.download({
+			url: blobUrl,
+			filename: `${folderName}/${file.name}`,
+			saveAs: false,
+			conflictAction: "uniquify",
+		});
+
+		const state = await waitForDownloadCompletion(downloadId);
+
+		if (state === "interrupted") {
+			return { ok: false, name: file.name, error: "Download interrupted" };
+		}
+
+		if (state === "timeout") {
+			return { ok: false, name: file.name, error: "Download completion timeout" };
+		}
+
+		return { ok: true, name: file.name };
+	} catch (error) {
+		return {
+			ok: false,
+			name: file.name,
+			error: error instanceof Error ? error.message : String(error),
+		};
+	}
+}
+
+async function downloadViaBlobUrls(folderName, payload) {
+	let created;
+
+	try {
+		created = await createBlobUrlsInOffscreen(payload);
+	} catch (error) {
+		return {
+			ok: false,
+			error: error instanceof Error ? error.message : String(error),
+		};
+	}
+
+	// Запускаем все download'ы сразу — Chrome сам выстроит их в очередь.
+	// Параллельность важна: последовательные await удлиняли бы экспорт на ~N*100ms.
+	const tasks = payload.map((file, index) => {
+		const entry = created[index];
+		if (!entry?.url) {
+			return Promise.resolve({
+				ok: false,
+				name: file.name,
+				error: "Missing blob URL from offscreen",
+			});
+		}
+
+		return downloadOneViaBlobUrl(folderName, file, entry.url);
+	});
+
+	const results = await Promise.all(tasks);
+
+	// Освобождаем blob URLs после завершения download'ов.
+	revokeBlobUrlsInOffscreen(created.map((item) => item?.url).filter((url) => typeof url === "string"));
+
+	const failed = results.filter((item) => !item.ok);
+	const firstError = failed.length > 0 ? failed[0].error || "unknown error" : null;
+
+	return {
+		ok: failed.length === 0,
+		count: results.length,
+		failed,
+		error: firstError ? `${failed.length} of ${results.length} downloads failed: ${firstError}` : null,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Fallback через data: URL (на случай, если offscreen недоступен).
+// ---------------------------------------------------------------------------
+
+async function downloadViaDataUrl(folderName, file) {
+	try {
+		const url = `data:text/markdown;charset=utf-8,${encodeURIComponent(file.text)}`;
+		await chrome.downloads.download({
+			url,
+			filename: `${folderName}/${file.name}`,
+			saveAs: false,
+			conflictAction: "uniquify",
+		});
+		return { ok: true, name: file.name };
+	} catch (error) {
+		return {
+			ok: false,
+			name: file.name,
+			error: error instanceof Error ? error.message : String(error),
+		};
+	}
+}
+
+async function downloadViaDataUrls(folderName, payload) {
+	const results = await Promise.all(payload.map((file) => downloadViaDataUrl(folderName, file)));
+
+	const failed = results.filter((item) => !item.ok);
+	const firstError = failed.length > 0 ? failed[0].error || "unknown error" : null;
+
+	return {
+		ok: failed.length === 0,
+		count: results.length,
+		failed,
+		error: firstError ? `${failed.length} of ${results.length} downloads failed: ${firstError}` : null,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Основной диспетчер: blob → fallback data: URL.
+// ---------------------------------------------------------------------------
+
+async function downloadAllFiles(folderName, files) {
+	const payload = files.map((file) => ({
+		name: ArenaShared.sanitizeFileName(file.name || "file.md", "file.md"),
+		text: String(file.text ?? "").replace(/\r\n/g, "\n"),
+	}));
+
+	const blobResult = await downloadViaBlobUrls(folderName, payload);
+
+	if (blobResult?.ok) {
+		scheduleOffscreenClose();
+		return { ok: true, count: payload.length };
+	}
+
+	console.warn("[arena-utils] Blob download failed, falling back to data: URL. Reason:", blobResult?.error || blobResult);
+
+	// Повторяем только те файлы, что упали; если их список пуст —
+	// значит, упало до download'ов, повторяем всё.
+	let remaining = payload;
+
+	if (Array.isArray(blobResult?.failed) && blobResult.failed.length > 0) {
+		const failedNames = new Set(blobResult.failed.map((item) => item.name));
+		remaining = payload.filter((file) => failedNames.has(file.name));
+	}
+
+	console.warn(`[arena-utils] Falling back to data: URL for ${remaining.length} of ${payload.length} file(s)`);
+
+	const fallbackResult = await downloadViaDataUrls(folderName, remaining);
+	scheduleOffscreenClose();
+
+	if (!fallbackResult.ok) {
+		return {
+			ok: false,
+			count: payload.length,
+			failed: fallbackResult.failed,
+			error: fallbackResult.error,
+		};
+	}
+
+	return {
+		ok: true,
+		count: payload.length,
+		viaFallback: remaining.length,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Messaging
+// ---------------------------------------------------------------------------
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (message?.type === "ARENA_OPEN_OPTIONS") {
 		const hash = typeof message.hash === "string" && message.hash.startsWith("#") ? message.hash : "";
@@ -162,22 +394,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 			return;
 		}
 
-		const payload = files.map((file) => ({
-			name: ArenaShared.sanitizeFileName(file.name || "file.md", "file.md"),
-			text: String(file.text ?? "").replace(/\r\n/g, "\n"),
-		}));
-
-		await ensureOffscreenDocument();
-
-		const result = await sendMessageWithTimeout({
-			type: OFFSCREEN_DOWNLOAD_TYPE,
-			folderName,
-			files: payload,
-		});
-
-		scheduleOffscreenClose();
-
-		sendResponse(result || { ok: false, error: "Empty response from offscreen" });
+		const result = await downloadAllFiles(folderName, files);
+		sendResponse(result);
 	})().catch((error) => {
 		console.error("[arena-utils] Download error:", error);
 		sendResponse({

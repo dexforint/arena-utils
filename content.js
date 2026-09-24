@@ -901,7 +901,13 @@ async function runExport() {
 		});
 
 		if (!downloadResult?.ok) {
-			throw new Error(downloadResult?.error || "Failed to download files");
+			const failed = Array.isArray(downloadResult?.failed) ? downloadResult.failed : [];
+			const details = failed
+				.slice(0, 3)
+				.map((item) => `${item?.name || "?"}: ${item?.error || "unknown"}`)
+				.join("; ");
+
+			throw new Error(downloadResult?.error || details || "Failed to download files");
 		}
 
 		showToast(`Done: ${files.length} files`);
