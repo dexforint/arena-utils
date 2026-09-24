@@ -6,10 +6,12 @@
 	window.__arenaExportPageBridgeInstalled = true;
 
 	const AUTOSCROLL_KEY = "__arena_utils_disable_autoscroll";
+	const ALLOW_SCROLL_KEY = "__arena_utils_allow_scroll";
+	const CHAT_LIST_SELECTOR = "ol.flex-col-reverse, ol.mt-8";
 
 	function isAutoscrollDisabled() {
 		try {
-			if (sessionStorage.getItem("__arena_utils_allow_scroll") === "1") {
+			if (sessionStorage.getItem(ALLOW_SCROLL_KEY) === "1") {
 				return false;
 			}
 
@@ -33,11 +35,11 @@
 			return true;
 		}
 
-		if (el.closest && el.closest("ol.flex-col-reverse, ol.mt-8")) {
+		if (el.closest && el.closest(CHAT_LIST_SELECTOR)) {
 			return true;
 		}
 
-		if (el.querySelector && el.querySelector("ol.flex-col-reverse, ol.mt-8")) {
+		if (el.querySelector && el.querySelector(CHAT_LIST_SELECTOR)) {
 			return true;
 		}
 
@@ -90,16 +92,15 @@
 		return nativeWindowScroll(...args);
 	};
 
-	const scrollTopDescriptor =
-		Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop") || Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTop");
+	// getter не проксируем: на каждом чтении scrollTop (а его читают довольно часто
+	// и React, и сторонние скрипты) не нужна проверка флага.
+	const scrollTopDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop");
 
 	if (scrollTopDescriptor?.set && scrollTopDescriptor?.get) {
 		Object.defineProperty(Element.prototype, "scrollTop", {
 			configurable: true,
 			enumerable: scrollTopDescriptor.enumerable,
-			get() {
-				return scrollTopDescriptor.get.call(this);
-			},
+			get: scrollTopDescriptor.get,
 			set(value) {
 				if (isAutoscrollDisabled() && isChatAutoscrollTarget(this)) {
 					return;
@@ -377,10 +378,6 @@
 				const className = props.className || "";
 				const lang = languageFromClassName(className);
 				const text = extractCodeText(children, depth + 1).replace(/\n+$/, "");
-
-				if (mode === "codeblock") {
-					return text;
-				}
 
 				if (lang && text.includes("\n")) {
 					return `\`\`\`${lang}\n${text}\n\`\`\``;

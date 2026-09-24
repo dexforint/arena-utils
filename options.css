@@ -273,3 +273,7 @@ select {
 #prompt-text {
 	min-height: 90px;
 }
+
+#folder-name.warning {
+	color: hsl(var(--interactive-negative));
+}

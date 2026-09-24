@@ -1,4 +1,4 @@
-importScripts("chatTemplates.js");
+importScripts("shared.js", "chatTemplates.js");
 
 const DEFAULT_PROMPTS = [
 	{
@@ -27,6 +27,14 @@ const DEFAULT_PROMPTS = [
 		text: "Суммируй ключевые тезисы списком. Отдельно укажи решения, открытые вопросы и следующие шаги.",
 	},
 ];
+
+const OFFSCREEN_PATH = "offscreen.html";
+const OFFSCREEN_DOWNLOAD_TYPE = "ARENA_OFFSCREEN_DOWNLOAD";
+const OFFSCREEN_IDLE_MS = 5000;
+const OFFSCREEN_REPLY_TIMEOUT_MS = 120000;
+
+let offscreenSetupPromise = null;
+let offscreenCloseTimer = 0;
 
 chrome.runtime.onInstalled.addListener(async () => {
 	const current = await chrome.storage.local.get(["prompts", "disableAutoscroll", "panelCollapsed", "collapseCodeBlocks", "chatTemplates"]);
@@ -58,17 +66,77 @@ chrome.runtime.onInstalled.addListener(async () => {
 	}
 });
 
-function sanitizeFileName(value) {
-	return (
-		String(value || "")
-			.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
-			.trim()
-			.slice(0, 120) || "arena-export"
-	);
+async function hasOffscreenDocument() {
+	if (typeof chrome.runtime.getContexts !== "function") {
+		return false;
+	}
+
+	try {
+		const contexts = await chrome.runtime.getContexts({
+			contextTypes: ["OFFSCREEN_DOCUMENT"],
+			documentUrls: [chrome.runtime.getURL(OFFSCREEN_PATH)],
+		});
+
+		return contexts.length > 0;
+	} catch (_error) {
+		return false;
+	}
 }
 
-function makeDataUrl(text) {
-	return `data:text/markdown;charset=utf-8,${encodeURIComponent(text)}`;
+async function ensureOffscreenDocument() {
+	if (await hasOffscreenDocument()) {
+		return;
+	}
+
+	if (!offscreenSetupPromise) {
+		offscreenSetupPromise = chrome.offscreen
+			.createDocument({
+				url: OFFSCREEN_PATH,
+				reasons: ["BLOBS"],
+				justification: "Create blob URLs to save exported chats as files.",
+			})
+			.catch((error) => {
+				// Гонка: документ уже создан другим вызовом.
+				if (!String(error?.message || error).includes("Only a single offscreen document")) {
+					throw error;
+				}
+			})
+			.finally(() => {
+				offscreenSetupPromise = null;
+			});
+	}
+
+	await offscreenSetupPromise;
+}
+
+async function closeOffscreenDocument() {
+	try {
+		if (!(await hasOffscreenDocument())) {
+			return;
+		}
+
+		await chrome.offscreen.closeDocument();
+	} catch (_error) {
+		/* ignore */
+	}
+}
+
+function scheduleOffscreenClose() {
+	clearTimeout(offscreenCloseTimer);
+	offscreenCloseTimer = setTimeout(() => {
+		void closeOffscreenDocument();
+	}, OFFSCREEN_IDLE_MS);
+}
+
+function sendMessageWithTimeout(message, timeoutMs = OFFSCREEN_REPLY_TIMEOUT_MS) {
+	let timer = 0;
+
+	return Promise.race([
+		chrome.runtime.sendMessage(message).finally(() => clearTimeout(timer)),
+		new Promise((_, reject) => {
+			timer = setTimeout(() => reject(new Error("Offscreen response timeout")), timeoutMs);
+		}),
+	]);
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -86,22 +154,30 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	}
 
 	(async () => {
-		const folderName = sanitizeFileName(message.folderName || "arena-export");
+		const folderName = ArenaShared.sanitizeFileName(message.folderName || "arena-export");
 		const files = Array.isArray(message.files) ? message.files : [];
 
-		for (const file of files) {
-			const fileName = sanitizeFileName(file.name || "file.md");
-			const text = String(file.text ?? "").replace(/\r\n/g, "\n");
-
-			await chrome.downloads.download({
-				url: makeDataUrl(text),
-				filename: `${folderName}/${fileName}`,
-				saveAs: false,
-				conflictAction: "uniquify",
-			});
+		if (files.length === 0) {
+			sendResponse({ ok: true, count: 0 });
+			return;
 		}
 
-		sendResponse({ ok: true, count: files.length });
+		const payload = files.map((file) => ({
+			name: ArenaShared.sanitizeFileName(file.name || "file.md", "file.md"),
+			text: String(file.text ?? "").replace(/\r\n/g, "\n"),
+		}));
+
+		await ensureOffscreenDocument();
+
+		const result = await sendMessageWithTimeout({
+			type: OFFSCREEN_DOWNLOAD_TYPE,
+			folderName,
+			files: payload,
+		});
+
+		scheduleOffscreenClose();
+
+		sendResponse(result || { ok: false, error: "Empty response from offscreen" });
 	})().catch((error) => {
 		console.error("[arena-utils] Download error:", error);
 		sendResponse({

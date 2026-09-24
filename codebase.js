@@ -279,7 +279,9 @@
 		}
 	}
 
-	async function scanDirectory(dirHandle, rel, fullIgnore, onProgress) {
+	const MAX_SCAN_DEPTH = 64;
+
+	async function scanDirectory(dirHandle, rel, fullIgnore, onProgress, depth = 0) {
 		const node = {
 			kind: "directory",
 			name: rel ? rel.split("/").at(-1) : dirHandle.name,
@@ -287,6 +289,11 @@
 			children: [],
 			error: null,
 		};
+
+		if (depth >= MAX_SCAN_DEPTH) {
+			node.error = `max depth ${MAX_SCAN_DEPTH} reached`;
+			return node;
+		}
 
 		let entries;
 
@@ -308,7 +315,7 @@
 					continue;
 				}
 
-				node.children.push(await scanDirectory(handle, childRel, fullIgnore, onProgress));
+				node.children.push(await scanDirectory(handle, childRel, fullIgnore, onProgress, depth + 1));
 				continue;
 			}
 
@@ -402,26 +409,80 @@
 		}
 	}
 
+	function createProgressReporter(callback, minIntervalMs = 100) {
+		const emit = typeof callback === "function" ? callback : () => {};
+		let lastCall = 0;
+		let pendingMessage = null;
+		let timer = 0;
+
+		function flush() {
+			timer = 0;
+			if (pendingMessage == null) {
+				return;
+			}
+
+			const message = pendingMessage;
+			pendingMessage = null;
+			lastCall = Date.now();
+			emit(message);
+		}
+
+		function report(message) {
+			const now = Date.now();
+			const elapsed = now - lastCall;
+
+			if (elapsed >= minIntervalMs) {
+				if (timer) {
+					clearTimeout(timer);
+					timer = 0;
+				}
+				pendingMessage = null;
+				lastCall = now;
+				emit(message);
+				return;
+			}
+
+			pendingMessage = message;
+			if (!timer) {
+				timer = setTimeout(flush, minIntervalMs - elapsed);
+			}
+		}
+
+		report.flush = () => {
+			if (timer) {
+				clearTimeout(timer);
+				timer = 0;
+			}
+			flush();
+		};
+
+		return report;
+	}
+
 	async function generateSnapshot(rootHandle, options = {}, onProgress = () => {}) {
+		const report = createProgressReporter(onProgress, 100);
 		const maxChars = Number(options.maxChars ?? 100000);
 		const maxFileBytes = Number(options.maxFileBytes ?? 0);
-		const fullIgnore = createIgnoreSpec(options.exclude ?? DEFAULT_FULL_EXCLUDE);
-		const contentIgnore = createIgnoreSpec(options.contentExclude ?? DEFAULT_CONTENT_EXCLUDE);
+
+		let excludeLines = options.exclude ?? DEFAULT_FULL_EXCLUDE;
+		let contentExcludeLines = options.contentExclude ?? DEFAULT_CONTENT_EXCLUDE;
 
 		if (options.gitignore) {
 			try {
 				const gitignoreHandle = await rootHandle.getFileHandle(".gitignore");
 				const gitignoreFile = await gitignoreHandle.getFile();
 				const gitignoreText = await gitignoreFile.text();
-				const merged = createIgnoreSpec([...splitPatternLines(gitignoreText), ...(options.exclude ?? DEFAULT_FULL_EXCLUDE)]);
-				Object.assign(fullIgnore, merged);
+				excludeLines = [...splitPatternLines(gitignoreText), ...splitPatternLines(excludeLines)];
 			} catch (_error) {
 				/* no .gitignore */
 			}
 		}
 
-		onProgress("Scanning folder…");
-		const tree = await scanDirectory(rootHandle, "", fullIgnore, onProgress);
+		const fullIgnore = createIgnoreSpec(excludeLines);
+		const contentIgnore = createIgnoreSpec(contentExcludeLines);
+
+		report("Scanning folder…");
+		const tree = await scanDirectory(rootHandle, "", fullIgnore, report);
 		tree.name = rootHandle.name;
 
 		const writer = new ChunkWriter(maxChars);
@@ -443,7 +504,7 @@
 		let skippedCount = 0;
 
 		for (const node of walkFiles(tree)) {
-			onProgress(`Reading ${node.rel}`);
+			report(`Reading ${node.rel}`);
 			writer.write(`\n--- BEGIN FILE ${quoted(node.rel)} ---\n`);
 
 			if (isContentSkipped(contentIgnore, node.rel)) {
@@ -468,7 +529,8 @@
 		}
 
 		const chunks = writer.finish();
-		onProgress("Done");
+		report.flush();
+		report("Done");
 
 		return {
 			folderName: rootHandle.name,

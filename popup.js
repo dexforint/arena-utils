@@ -148,18 +148,28 @@ async function init() {
 	renderCodebase(stored.codebaseSnapshot, tab);
 
 	pickFolderButton.addEventListener("click", async () => {
-		await chrome.windows.create({
+		await chrome.tabs.create({
 			url: chrome.runtime.getURL("options.html#codebase"),
-			type: "popup",
-			width: 560,
-			height: 780,
-			focused: true,
+			active: true,
 		});
+		window.close();
 	});
 
 	chrome.storage.onChanged.addListener((changes, area) => {
-		if (area === "local" && changes.codebaseSnapshot) {
+		if (area !== "local") {
+			return;
+		}
+
+		if (changes.codebaseSnapshot) {
 			renderCodebase(changes.codebaseSnapshot.newValue, tab);
+		}
+
+		if (changes.prompts && isArenaTab(tab)) {
+			renderButtonList(promptsRoot, changes.prompts.newValue || [], tab, "No prompts yet. Open Edit to add some.");
+		}
+
+		if (changes.chatTemplates && !isArenaTab(tab)) {
+			renderChatTemplates(changes.chatTemplates.newValue || []);
 		}
 	});
 

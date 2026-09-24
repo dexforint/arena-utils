@@ -2,31 +2,76 @@ let exportInProgress = false;
 let requestCounter = 0;
 let panelCollapsed = true;
 let newChatCollapsed = true;
+let newChatCollapsedOverride = false;
 let collapseCodeBlocks = true;
 let highlightTimer = 0;
 let refreshTimer = 0;
 let currentSyncTimer = 0;
 let lastUrl = location.href;
-let lastSignature = "";
 let currentIndex = -1;
 let pinnedUntil = 0;
 let boundScroller = null;
 let cachedMessages = [];
+let panelRows = [];
 let chatTemplates = [];
 let pendingPromptInFlight = false;
 
 const pendingRequests = new Map();
+
+const Shared = globalThis.ArenaShared;
+if (!Shared) {
+	console.error("[arena-utils] shared.js is missing; using inline fallbacks");
+}
+
+const sanitizeFileName =
+	Shared?.sanitizeFileName ||
+	((value) =>
+		String(value || "")
+			.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+			.trim()
+			.slice(0, 120) || "arena-dialog");
+
+const normalizeMarkdown =
+	Shared?.normalizeMarkdown ||
+	((text) =>
+		`${String(text ?? "")
+			.replace(/\r\n/g, "\n")
+			.trimEnd()}\n`);
+
+const prefixListItem =
+	Shared?.prefixListItem ||
+	((block, marker, indent) =>
+		String(block || "")
+			.split("\n")
+			.map((line, index) => (index === 0 ? `${marker}${line}` : line ? `${indent}${line}` : ""))
+			.join("\n"));
+
 const HOST_ID = "__arena_utils_host__";
 const NEW_CHAT_HOST_ID = "__arena_utils_new_chat_host__";
 const PAGE_STYLE_ID = "__arena_utils_page_style__";
 const AUTOSCROLL_KEY = "__arena_utils_disable_autoscroll";
 const ALLOW_SCROLL_KEY = "__arena_utils_allow_scroll";
 const PENDING_PROMPT_KEY = "__arena_utils_pending_prompt";
+const EXPORT_ATTR = "data-arena-export-id";
 const MESSAGE_SCROLL_OFFSET = 16;
+const READING_LINE_OFFSET = 48;
+const PREVIEW_CACHE_TTL_MS = 1500;
 const CODE_TOGGLE_CLASS = "__arena-utils-code-toggle";
 const CODE_COLLAPSED_CLASS = "__arena-utils-code-collapsed";
+const HIGHLIGHT_CLASS = "__arena-utils-highlight";
 
-const PANEL_CSS = `
+const MESSAGE_LIST_SELECTORS = ["main ol.flex-col-reverse", "ol.flex-col-reverse", "ol.mt-8.flex", "ol.mt-8"];
+
+const PROSE_SELECTOR = ".prose";
+const CODE_BLOCK_SELECTOR = "[data-code-block='true']";
+const COMPOSER_SELECTORS = ['textarea[name="message"]', 'form textarea[name="message"]', "form textarea", 'textarea[placeholder*="Ask"]'];
+const PORTAL_TARGET_SELECTOR = "#root-portal-target";
+const SEND_BUTTON_SELECTOR = 'button[aria-label="Send message"]';
+
+// Иконка Copy на arena.ai — узнаём по этим путям SVG.
+const COPY_ICON_PATH_MARKERS = ["M19.4 20H9.6", "M15 9V4.6"];
+
+const PANEL_SHARED_CSS = `
 :host {
 	all: initial;
 	font-family: Inter,Inter Fallback,ui-sans-serif,system-ui,sans-serif;
@@ -55,7 +100,6 @@ const PANEL_CSS = `
 }
 
 .panel {
-	width: 280px;
 	color: hsl(var(--text-primary));
 	background: color-mix(in srgb, var(--arena-bg) 92%, transparent);
 	border: 1px solid var(--arena-border);
@@ -94,19 +138,6 @@ const PANEL_CSS = `
 	color: hsl(var(--header-primary));
 }
 
-.count {
-	margin-left: auto;
-	min-width: 18px;
-	padding: 1px 6px;
-	border-radius: 999px;
-	border: 1px solid var(--arena-border-faint);
-	background: var(--arena-raised);
-	color: hsl(var(--text-secondary));
-	font-size: 11px;
-	text-align: center;
-	font-variant-numeric: tabular-nums;
-}
-
 .chevron {
 	font-size: 11px;
 	color: hsl(var(--text-muted));
@@ -122,6 +153,27 @@ const PANEL_CSS = `
 
 .panel[data-collapsed="false"] .body {
 	display: block;
+}
+`;
+
+const PANEL_CSS = `
+${PANEL_SHARED_CSS}
+
+.panel {
+	width: 280px;
+}
+
+.count {
+	margin-left: auto;
+	min-width: 18px;
+	padding: 1px 6px;
+	border-radius: 999px;
+	border: 1px solid var(--arena-border-faint);
+	background: var(--arena-raised);
+	color: hsl(var(--text-secondary));
+	font-size: 11px;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
 }
 
 .nav {
@@ -234,89 +286,14 @@ const PANEL_CSS = `
 `;
 
 const NEW_CHAT_CSS = `
-:host {
-	all: initial;
-	font-family: Inter,Inter Fallback,ui-sans-serif,system-ui,sans-serif;
-	--header-primary: 60 3% 14%;
-	--text-primary: 24 6% 17%;
-	--text-secondary: 30 7% 24%;
-	--text-muted: 37 5% 52%;
-	--interactive-active: 60 4% 11%;
-	--arena-bg: rgb(252, 250, 248);
-	--arena-raised: rgb(240, 235, 229);
-	--arena-border: rgb(225, 222, 219);
-	--arena-border-faint: rgb(229, 231, 235);
-	color: hsl(var(--text-primary));
-}
-
-:host([data-theme="dark"]) {
-	--header-primary: 0 0% 100%;
-	--text-primary: 33 31% 94%;
-	--text-secondary: 35 20% 88%;
-	--text-muted: 35 6% 38%;
-	--interactive-active: 0 0% 100%;
-	--arena-bg: rgb(22, 20, 18);
-	--arena-raised: rgb(36, 32, 28);
-	--arena-border: rgb(58, 52, 46);
-	--arena-border-faint: rgb(48, 44, 40);
-}
+${PANEL_SHARED_CSS}
 
 .panel {
 	width: 260px;
-	color: hsl(var(--text-primary));
-	background: color-mix(in srgb, var(--arena-bg) 92%, transparent);
-	border: 1px solid var(--arena-border);
-	border-radius: 12px;
-	box-shadow: 0 12px 40px rgb(46 43 41 / 10%);
-	backdrop-filter: blur(16px);
-	overflow: hidden;
-}
-
-.panel[data-collapsed="true"] {
-	width: auto;
-}
-
-.toggle {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	width: 100%;
-	margin: 0;
-	padding: 8px 10px;
-	border: 0;
-	background: transparent;
-	color: inherit;
-	cursor: pointer;
-	font: inherit;
-}
-
-.toggle:hover {
-	background: var(--arena-raised);
-}
-
-.title {
-	font-size: 12px;
-	font-weight: 650;
-	letter-spacing: 0.02em;
-	color: hsl(var(--header-primary));
 }
 
 .chevron {
 	margin-left: auto;
-	font-size: 11px;
-	color: hsl(var(--text-muted));
-}
-
-.body {
-	display: none;
-	max-height: min(62vh, 520px);
-	overflow: auto;
-	border-top: 1px solid var(--arena-border-faint);
-	background: var(--arena-bg);
-}
-
-.panel[data-collapsed="false"] .body {
-	display: block;
 }
 
 .templates {
@@ -438,15 +415,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	}
 });
 
-function sanitizeFileName(value) {
-	return (
-		String(value || "")
-			.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
-			.trim()
-			.slice(0, 120) || "arena-dialog"
-	);
-}
-
 function getConversationIdFromUrl() {
 	const match = location.pathname.match(/\/c\/([^/]+)/i);
 	if (match) {
@@ -463,12 +431,6 @@ function isExistingChatPage() {
 
 function buildFolderName() {
 	return sanitizeFileName(getConversationIdFromUrl());
-}
-
-function normalizeMarkdown(text) {
-	return `${String(text ?? "")
-		.replace(/\r\n/g, "\n")
-		.trimEnd()}\n`;
 }
 
 function showToast(text) {
@@ -511,7 +473,7 @@ showToast._timer = 0;
 
 function hasCopyIcon(button) {
 	const paths = Array.from(button.querySelectorAll("svg path")).map((node) => node.getAttribute("d") || "");
-	return paths.some((d) => d.includes("M19.4 20H9.6")) && paths.some((d) => d.includes("M15 9V4.6"));
+	return COPY_ICON_PATH_MARKERS.every((marker) => paths.some((d) => d.includes(marker)));
 }
 
 function classifyMessageCopyButton(button) {
@@ -528,7 +490,14 @@ function classifyMessageCopyButton(button) {
 }
 
 function getMessageList() {
-	return document.querySelector("main ol.flex-col-reverse") || document.querySelector("ol.flex-col-reverse") || document.querySelector("ol.mt-8.flex");
+	for (const selector of MESSAGE_LIST_SELECTORS) {
+		const element = document.querySelector(selector);
+		if (element) {
+			return element;
+		}
+	}
+
+	return null;
 }
 
 function classifyMessageRoot(el) {
@@ -689,19 +658,6 @@ function languageFromClassName(value) {
 	return match ? match[1].toLowerCase() : "";
 }
 
-function prefixListItem(block, marker, indent) {
-	const lines = String(block || "").split("\n");
-	return lines
-		.map((line, index) => {
-			if (index === 0) {
-				return `${marker}${line}`;
-			}
-
-			return line ? `${indent}${line}` : "";
-		})
-		.join("\n");
-}
-
 function domToMarkdown(root) {
 	function serialize(node, context = "block") {
 		if (!node) {
@@ -828,16 +784,31 @@ function domToMarkdown(root) {
 }
 
 function markdownFromDom(root) {
-	const prose = root.querySelector(".prose") || root;
+	const prose = root.querySelector(PROSE_SELECTOR) || root;
 	const text = domToMarkdown(prose).trim();
 	return text ? normalizeMarkdown(text) : "";
 }
 
+const previewCache = new WeakMap();
+
 function previewFromRoot(root) {
-	const prose = root.querySelector(".prose") || root;
-	return String(prose.innerText || prose.textContent || "")
+	const cached = previewCache.get(root);
+	const now = Date.now();
+	if (cached && now - cached.ts < PREVIEW_CACHE_TTL_MS) {
+		return cached.text;
+	}
+
+	const prose = root.querySelector(PROSE_SELECTOR) || root;
+	const text = String(prose.innerText || prose.textContent || "")
 		.replace(/\s+/g, " ")
 		.trim();
+
+	previewCache.set(root, { text, ts: now });
+	return text;
+}
+
+function invalidatePreview(root) {
+	previewCache.delete(root);
 }
 
 function requestReactMarkdown(items) {
@@ -884,7 +855,7 @@ async function runExport() {
 
 		const requestItems = orderedEntries.map((entry, index) => {
 			const id = `arena-export-msg-${index + 1}`;
-			entry.root.setAttribute("data-arena-export-id", id);
+			entry.root.setAttribute(EXPORT_ATTR, id);
 			return { id };
 		});
 
@@ -939,17 +910,22 @@ async function runExport() {
 		showToast(`Error: ${error instanceof Error ? error.message : String(error)}`);
 		throw error;
 	} finally {
-		for (const node of document.querySelectorAll("[data-arena-export-id]")) {
-			node.removeAttribute("data-arena-export-id");
+		for (const node of document.querySelectorAll(`[${EXPORT_ATTR}]`)) {
+			node.removeAttribute(EXPORT_ATTR);
 		}
 		exportInProgress = false;
 	}
 }
 
 function getComposerTextarea() {
-	return (
-		document.querySelector('textarea[name="message"]') || document.querySelector("form textarea") || document.querySelector('textarea[placeholder*="Ask"]')
-	);
+	for (const selector of COMPOSER_SELECTORS) {
+		const element = document.querySelector(selector);
+		if (element) {
+			return element;
+		}
+	}
+
+	return null;
 }
 
 function setTextareaValue(textarea, value) {
@@ -1033,9 +1009,36 @@ function sleep(ms) {
 
 function readPendingPrompt() {
 	try {
-		return sessionStorage.getItem(PENDING_PROMPT_KEY) || "";
+		const raw = sessionStorage.getItem(PENDING_PROMPT_KEY);
+		if (!raw) {
+			return null;
+		}
+
+		if (raw.startsWith("{")) {
+			const parsed = JSON.parse(raw);
+			return {
+				text: String(parsed?.text || ""),
+				url: String(parsed?.url || ""),
+			};
+		}
+
+		// Совместимость со старым форматом (просто строка).
+		return { text: raw, url: "" };
 	} catch (_error) {
-		return "";
+		return null;
+	}
+}
+
+function writePendingPrompt(text, url = "") {
+	try {
+		if (!text) {
+			sessionStorage.removeItem(PENDING_PROMPT_KEY);
+			return;
+		}
+
+		sessionStorage.setItem(PENDING_PROMPT_KEY, JSON.stringify({ text: String(text), url: String(url || "") }));
+	} catch (_error) {
+		/* ignore */
 	}
 }
 
@@ -1067,8 +1070,9 @@ async function insertPendingPrompt() {
 		return;
 	}
 
-	let text = readPendingPrompt();
-	let pendingUrl = "";
+	let pending = readPendingPrompt();
+	let text = pending?.text || "";
+	let pendingUrl = pending?.url || "";
 
 	if (!text) {
 		const stored = await chrome.storage.local.get({
@@ -1077,12 +1081,13 @@ async function insertPendingPrompt() {
 		});
 		text = String(stored.pendingChatPrompt || "");
 		pendingUrl = String(stored.pendingChatUrl || "");
-		if (text && !pendingPromptMatchesPage(pendingUrl)) {
-			return;
-		}
 	}
 
 	if (!text) {
+		return;
+	}
+
+	if (!pendingPromptMatchesPage(pendingUrl)) {
 		return;
 	}
 
@@ -1090,7 +1095,7 @@ async function insertPendingPrompt() {
 
 	try {
 		for (let attempt = 0; attempt < 50; attempt += 1) {
-			if (!readPendingPrompt()) {
+			if (!readPendingPrompt()?.text) {
 				const stored = await chrome.storage.local.get({ pendingChatPrompt: "" });
 				if (!stored.pendingChatPrompt) {
 					return;
@@ -1120,17 +1125,9 @@ function openChatTemplate(template) {
 	const url = ArenaChatTemplates.buildUrl(template, location.origin);
 	const prompt = String(template?.prompt || "");
 
-	try {
-		if (prompt) {
-			sessionStorage.setItem(PENDING_PROMPT_KEY, prompt);
-		} else {
-			sessionStorage.removeItem(PENDING_PROMPT_KEY);
-		}
-	} catch (_error) {
-		/* ignore */
-	}
-
 	const next = new URL(url, location.origin);
+	writePendingPrompt(prompt, next.href);
+
 	if (next.pathname === location.pathname && next.search === location.search) {
 		void insertPendingPrompt();
 		return;
@@ -1155,7 +1152,7 @@ function ensurePageStyle() {
 	const style = document.createElement("style");
 	style.id = PAGE_STYLE_ID;
 	style.textContent = `
-		.__arena-utils-highlight {
+		.${HIGHLIGHT_CLASS} {
 			outline: 1px solid rgb(225, 222, 219) !important;
 			outline-offset: 4px !important;
 			border-radius: 10px !important;
@@ -1202,7 +1199,7 @@ function applyThemeToHost(host) {
 	const root = getComputedStyle(document.documentElement);
 	const body = getComputedStyle(document.body);
 	const raised = document.querySelector(".bg-surface-raised");
-	const send = document.querySelector('button[aria-label="Send message"]');
+	const send = document.querySelector(SEND_BUTTON_SELECTOR);
 
 	const copyVar = (name) => {
 		const value = root.getPropertyValue(name).trim();
@@ -1279,7 +1276,7 @@ function onCodeToggleClick(event) {
 	event.preventDefault();
 	event.stopPropagation();
 
-	const block = event.currentTarget.closest("[data-code-block='true']");
+	const block = event.currentTarget.closest(CODE_BLOCK_SELECTOR);
 	if (!block) {
 		return;
 	}
@@ -1328,7 +1325,7 @@ function processCodeBlocks() {
 			continue;
 		}
 
-		for (const block of message.root.querySelectorAll("[data-code-block='true']")) {
+		for (const block of message.root.querySelectorAll(CODE_BLOCK_SELECTOR)) {
 			seen.add(block);
 
 			if (!collapseCodeBlocks) {
@@ -1347,14 +1344,14 @@ function processCodeBlocks() {
 		}
 	}
 
-	for (const block of document.querySelectorAll("[data-code-block='true'][data-arena-utils-code]")) {
+	for (const block of document.querySelectorAll(`${CODE_BLOCK_SELECTOR}[data-arena-utils-code]`)) {
 		if (!seen.has(block) && !collapseCodeBlocks) {
 			teardownCodeBlock(block);
 		}
 	}
 
 	if (!collapseCodeBlocks) {
-		for (const block of document.querySelectorAll(`[data-code-block="true"].${CODE_COLLAPSED_CLASS}`)) {
+		for (const block of document.querySelectorAll(`${CODE_BLOCK_SELECTOR}.${CODE_COLLAPSED_CLASS}`)) {
 			teardownCodeBlock(block);
 		}
 	}
@@ -1398,13 +1395,16 @@ function setPanelCollapsed(collapsed, persist = true) {
 
 function highlightMessage(root) {
 	ensurePageStyle();
-	document.querySelectorAll(".__arena-utils-highlight").forEach((node) => {
-		node.classList.remove("__arena-utils-highlight");
+	invalidatePreview(root);
+
+	document.querySelectorAll(`.${HIGHLIGHT_CLASS}`).forEach((node) => {
+		node.classList.remove(HIGHLIGHT_CLASS);
 	});
-	root.classList.add("__arena-utils-highlight");
+
+	root.classList.add(HIGHLIGHT_CLASS);
 	window.clearTimeout(highlightTimer);
 	highlightTimer = window.setTimeout(() => {
-		root.classList.remove("__arena-utils-highlight");
+		root.classList.remove(HIGHLIGHT_CLASS);
 	}, 1400);
 }
 
@@ -1534,7 +1534,7 @@ function getCurrentMessageIndex(messages) {
 		return currentIndex;
 	}
 
-	const readingY = view.top + 48;
+	const readingY = view.top + READING_LINE_OFFSET;
 	let current = -1;
 	let best = -1;
 	let bestDist = Infinity;
@@ -1716,6 +1716,46 @@ function onKeyDown(event) {
 	stepMessage(event.key === "ArrowDown" ? 1 : -1);
 }
 
+function createPanelRow(root, role, index) {
+	const button = document.createElement("button");
+	button.type = "button";
+	button.className = "item";
+
+	const numberEl = document.createElement("span");
+	numberEl.className = "n";
+	numberEl.textContent = String(index + 1);
+
+	const roleEl = document.createElement("span");
+	roleEl.className = `role ${role}`;
+	roleEl.textContent = role === "user" ? "You" : "AI";
+
+	const previewEl = document.createElement("span");
+	previewEl.className = "preview";
+
+	button.append(numberEl, roleEl, previewEl);
+
+	const row = { root, role, button, numberEl, roleEl, previewEl };
+
+	button.addEventListener("click", () => {
+		const position = panelRows.indexOf(row);
+		if (position >= 0) {
+			jumpToMessage(row.root, position);
+		}
+	});
+
+	return row;
+}
+
+function renderEmptyPanelList(list) {
+	panelRows = [];
+	list.replaceChildren();
+
+	const empty = document.createElement("div");
+	empty.className = "empty";
+	empty.textContent = "Open a Direct chat to see messages.";
+	list.appendChild(empty);
+}
+
 function renderPanelList() {
 	const els = getPanelEls();
 	if (!els) {
@@ -1726,40 +1766,85 @@ function renderPanelList() {
 	ensureScrollWatch();
 	processCodeBlocks();
 
-	const signature = cachedMessages.map((item, index) => `${index}:${item.role}:${previewFromRoot(item.root).slice(0, 80)}`).join("|");
+	const messages = cachedMessages;
 
-	if (signature !== lastSignature) {
-		lastSignature = signature;
-		els.list.replaceChildren();
+	if (messages.length === 0) {
+		renderEmptyPanelList(els.list);
+		currentIndex = -1;
+		updateActiveItem();
+		return;
+	}
 
-		if (cachedMessages.length === 0) {
-			const empty = document.createElement("div");
-			empty.className = "empty";
-			empty.textContent = "Open a Direct chat to see messages.";
-			els.list.appendChild(empty);
-			currentIndex = -1;
-		} else {
-			for (let i = 0; i < cachedMessages.length; i += 1) {
-				const item = cachedMessages[i];
-				const button = document.createElement("button");
-				button.type = "button";
-				button.className = "item";
-				button.innerHTML = `
-					<span class="n">${i + 1}</span>
-					<span class="role ${item.role}">${item.role === "user" ? "You" : "AI"}</span>
-					<span class="preview"></span>
-				`;
-				button.querySelector(".preview").textContent = previewFromRoot(item.root) || "(empty)";
-				button.addEventListener("click", () => jumpToMessage(item.root, i));
-				els.list.appendChild(button);
-			}
+	const staleEmpty = els.list.querySelector(":scope > .empty");
+	if (staleEmpty) {
+		staleEmpty.remove();
+	}
+
+	const byRoot = new Map();
+	for (const row of panelRows) {
+		byRoot.set(row.root, row);
+	}
+
+	const usedButtons = new Set();
+	const nextRows = new Array(messages.length);
+
+	for (let i = 0; i < messages.length; i += 1) {
+		const { root, role } = messages[i];
+		let row = byRoot.get(root);
+
+		if (row && usedButtons.has(row.button)) {
+			row = null;
+		}
+
+		if (!row) {
+			row = createPanelRow(root, role, i);
+		} else if (row.role !== role) {
+			row.root = root;
+			row.role = role;
+			row.roleEl.className = `role ${role}`;
+			row.roleEl.textContent = role === "user" ? "You" : "AI";
+		}
+
+		usedButtons.add(row.button);
+		nextRows[i] = row;
+	}
+
+	for (const row of panelRows) {
+		if (!usedButtons.has(row.button)) {
+			row.button.remove();
+		}
+	}
+
+	panelRows = nextRows;
+
+	let cursor = els.list.firstChild;
+	for (const row of nextRows) {
+		if (row.button === cursor) {
+			cursor = cursor.nextSibling;
+			continue;
+		}
+
+		els.list.insertBefore(row.button, cursor);
+	}
+
+	for (let i = 0; i < nextRows.length; i += 1) {
+		const row = nextRows[i];
+
+		const number = String(i + 1);
+		if (row.numberEl.textContent !== number) {
+			row.numberEl.textContent = number;
+		}
+
+		const preview = previewFromRoot(row.root) || "(empty)";
+		if (row.previewEl.textContent !== preview) {
+			row.previewEl.textContent = preview;
 		}
 	}
 
 	if (Date.now() >= pinnedUntil) {
-		currentIndex = getCurrentMessageIndex(cachedMessages);
-	} else if (currentIndex >= cachedMessages.length) {
-		currentIndex = cachedMessages.length - 1;
+		currentIndex = getCurrentMessageIndex(messages);
+	} else if (currentIndex >= messages.length) {
+		currentIndex = messages.length - 1;
 	}
 
 	updateActiveItem();
@@ -1837,7 +1922,7 @@ function positionNewChatPanel() {
 		return;
 	}
 
-	const target = document.getElementById("root-portal-target");
+	const target = document.querySelector(PORTAL_TARGET_SELECTOR);
 	if (!target) {
 		host.style.top = "12px";
 		host.style.left = "12px";
@@ -1849,15 +1934,18 @@ function positionNewChatPanel() {
 	host.style.left = `${Math.max(8, Math.round(rect.left + 12))}px`;
 }
 
-function setNewChatCollapsed(collapsed) {
+function setNewChatCollapsed(collapsed, persist = false) {
 	newChatCollapsed = Boolean(collapsed);
 	const els = getNewChatPanelEls();
-	if (!els?.panel) {
-		return;
+	if (els?.panel) {
+		els.panel.dataset.collapsed = newChatCollapsed ? "true" : "false";
+		els.chevron.textContent = newChatCollapsed ? "▾" : "▴";
 	}
 
-	els.panel.dataset.collapsed = newChatCollapsed ? "true" : "false";
-	els.chevron.textContent = newChatCollapsed ? "▾" : "▴";
+	if (persist) {
+		newChatCollapsedOverride = true;
+		void chrome.storage.local.set({ newChatCollapsed });
+	}
 }
 
 function renderNewChatList() {
@@ -1915,7 +2003,7 @@ function ensureNewChatPanel() {
 	`;
 
 	shadow.querySelector(".toggle").addEventListener("click", () => {
-		setNewChatCollapsed(!newChatCollapsed);
+		setNewChatCollapsed(!newChatCollapsed, true);
 	});
 	shadow.querySelector(".edit").addEventListener("click", () => {
 		void chrome.runtime.sendMessage({
@@ -1935,9 +2023,12 @@ function scheduleRefresh() {
 	refreshTimer = window.setTimeout(() => {
 		if (location.href !== lastUrl) {
 			lastUrl = location.href;
-			lastSignature = "";
 			currentIndex = -1;
-			setNewChatCollapsed(isExistingChatPage());
+
+			if (!newChatCollapsedOverride) {
+				setNewChatCollapsed(isExistingChatPage(), false);
+			}
+
 			void insertPendingPrompt();
 		}
 
@@ -1957,6 +2048,7 @@ async function init() {
 	const stored = await chrome.storage.local.get({
 		disableAutoscroll: false,
 		panelCollapsed: true,
+		newChatCollapsed: null,
 		collapseCodeBlocks: true,
 		chatTemplates: [],
 	});
@@ -1964,12 +2056,14 @@ async function init() {
 	panelCollapsed = Boolean(stored.panelCollapsed);
 	collapseCodeBlocks = stored.collapseCodeBlocks !== false;
 	chatTemplates = Array.isArray(stored.chatTemplates) ? stored.chatTemplates : [];
-	newChatCollapsed = isExistingChatPage();
+	newChatCollapsedOverride = typeof stored.newChatCollapsed === "boolean";
+	newChatCollapsed = newChatCollapsedOverride ? stored.newChatCollapsed : isExistingChatPage();
+
 	writeAutoscrollFlag(Boolean(stored.disableAutoscroll));
 	ensurePanel();
 	ensureNewChatPanel();
 	setPanelCollapsed(panelCollapsed, false);
-	setNewChatCollapsed(newChatCollapsed);
+	setNewChatCollapsed(newChatCollapsed, false);
 	renderPanelList();
 	renderNewChatList();
 	void insertPendingPrompt();
@@ -2018,6 +2112,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
 	if (changes.chatTemplates) {
 		chatTemplates = Array.isArray(changes.chatTemplates.newValue) ? changes.chatTemplates.newValue : [];
 		renderNewChatList();
+	}
+
+	if (changes.newChatCollapsed && typeof changes.newChatCollapsed.newValue === "boolean") {
+		newChatCollapsedOverride = true;
+		if (changes.newChatCollapsed.newValue !== newChatCollapsed) {
+			setNewChatCollapsed(changes.newChatCollapsed.newValue, false);
+		}
 	}
 });
 

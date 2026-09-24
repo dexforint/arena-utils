@@ -83,17 +83,23 @@
 		}
 
 		const modePath = type === "side-by-side" ? "side-by-side" : "direct";
-		const url = new URL(`${base}/${category}/${modePath}`);
+		const path = `${base}/${category}/${modePath}`;
 
-		if (template?.modelA) {
-			url.searchParams.set("model_a", template.modelA);
+		try {
+			const url = new URL(path);
+
+			if (template?.modelA) {
+				url.searchParams.set("model_a", template.modelA);
+			}
+
+			if (type === "side-by-side" && template?.modelB) {
+				url.searchParams.set("model_b", template.modelB);
+			}
+
+			return url.toString();
+		} catch (_error) {
+			return path;
 		}
-
-		if (type === "side-by-side" && template?.modelB) {
-			url.searchParams.set("model_b", template.modelB);
-		}
-
-		return url.toString();
 	}
 
 	function summarize(template) {

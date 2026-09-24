@@ -50,6 +50,8 @@ Chrome cannot read a typed path such as `C:\project`.
 2. Choose a folder and **Generate prompts**
 3. Chunks `context-0001`, `context-0002`, … appear in the popup and insert like normal prompts
 
+If access to the folder is revoked (after a browser restart, for example), open **Options → Codebase** and click **Restore access**.
+
 Snapshot format matches the Python helper:
 
 - directory tree
@@ -89,6 +91,8 @@ arena.ai hides the Radix viewport scrollbar. The extension removes that rule so 
 3. **Load unpacked** → this folder
 4. Reload any open arena.ai tabs after updates
 
+After updating the extension, Chrome may drop folder access. Open **Options → Codebase** and click **Restore access** next to the folder name. The button appears only when the stored handle exists but the browser has revoked the permission.
+
 ## Usage
 
 - Toolbar icon: autoscroll, code collapse, export, prompts, codebase chunks
@@ -97,10 +101,10 @@ arena.ai hides the Radix viewport scrollbar. The extension removes that rule so 
 
 ## Permissions
 
-- `activeTab`, `downloads` — export Markdown
+- `downloads` — export Markdown files
 - `storage`, `unlimitedStorage` — settings, prompts, snapshots
+- `offscreen` — build blob URLs so the service worker can trigger file downloads
 - `https://arena.ai/*` — content scripts on chat pages
-- `downloads` — export Markdown
 
 Folder access uses the browser directory picker, not an arbitrary filesystem path.
 

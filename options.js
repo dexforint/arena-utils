@@ -13,6 +13,7 @@ const excludeInput = document.getElementById("exclude");
 const contentExcludeInput = document.getElementById("content-exclude");
 const statusEl = document.getElementById("codebase-status");
 const chunkList = document.getElementById("chunk-list");
+const restoreAccessButton = document.getElementById("restore-access");
 
 const IDB_NAME = "arena-utils";
 const IDB_STORE = "handles";
@@ -22,6 +23,7 @@ let templateSaveTimer = 0;
 let prompts = [];
 let chatTemplates = [];
 let dirHandle = null;
+let hasFolderAccess = false;
 let generating = false;
 
 function uid() {
@@ -285,14 +287,26 @@ async function saveSettings() {
 	});
 }
 
+const IDB_VERSION = 2;
+
 function openHandlesDb() {
 	return new Promise((resolve, reject) => {
-		const request = indexedDB.open(IDB_NAME, 1);
+		const request = indexedDB.open(IDB_NAME, IDB_VERSION);
+
 		request.onupgradeneeded = () => {
-			if (!request.result.objectStoreNames.contains(IDB_STORE)) {
-				request.result.createObjectStore(IDB_STORE);
+			const db = request.result;
+
+			if (!db.objectStoreNames.contains(IDB_STORE)) {
+				db.createObjectStore(IDB_STORE);
 			}
+
+			// v2: миграции сюда, когда появятся дополнительные хранилища.
 		};
+
+		request.onblocked = () => {
+			reject(new Error("IndexedDB upgrade blocked by another tab. Close other extension pages and try again."));
+		};
+
 		request.onsuccess = () => resolve(request.result);
 		request.onerror = () => reject(request.error);
 	});
@@ -318,17 +332,50 @@ async function loadDirHandle() {
 	});
 }
 
-async function ensurePermission(handle) {
-	const options = { mode: "read" };
-	if ((await handle.queryPermission(options)) === "granted") {
-		return true;
+async function queryPermission(handle) {
+	if (!handle) {
+		return false;
 	}
 
-	return (await handle.requestPermission(options)) === "granted";
+	try {
+		return (await handle.queryPermission({ mode: "read" })) === "granted";
+	} catch (_error) {
+		return false;
+	}
+}
+
+async function requestPermission(handle) {
+	if (!handle) {
+		return false;
+	}
+
+	try {
+		if ((await handle.queryPermission({ mode: "read" })) === "granted") {
+			return true;
+		}
+
+		return (await handle.requestPermission({ mode: "read" })) === "granted";
+	} catch (_error) {
+		return false;
+	}
 }
 
 function updateFolderLabel() {
-	folderNameEl.textContent = dirHandle ? dirHandle.name : "No folder selected";
+	if (!dirHandle) {
+		folderNameEl.textContent = "No folder selected";
+		folderNameEl.classList.remove("warning");
+		if (restoreAccessButton) {
+			restoreAccessButton.hidden = true;
+		}
+		return;
+	}
+
+	folderNameEl.textContent = dirHandle.name;
+	folderNameEl.classList.toggle("warning", !hasFolderAccess);
+
+	if (restoreAccessButton) {
+		restoreAccessButton.hidden = hasFolderAccess;
+	}
 }
 
 function applyOptionsTheme() {
@@ -373,6 +420,7 @@ pickFolderButton.addEventListener("click", async () => {
 			mode: "read",
 		});
 		dirHandle = handle;
+		hasFolderAccess = true;
 		await saveDirHandle(handle);
 		updateFolderLabel();
 		setStatus(`Folder selected: ${handle.name}`);
@@ -381,6 +429,23 @@ pickFolderButton.addEventListener("click", async () => {
 			setStatus(error instanceof Error ? error.message : String(error));
 		}
 	}
+});
+
+restoreAccessButton?.addEventListener("click", async () => {
+	if (!dirHandle) {
+		return;
+	}
+
+	const granted = await requestPermission(dirHandle);
+	hasFolderAccess = granted;
+	updateFolderLabel();
+
+	if (!granted) {
+		setStatus("Folder access was not granted.");
+		return;
+	}
+
+	setStatus(`Access to ${dirHandle.name} restored.`);
 });
 
 for (const input of [maxCharsInput, gitignoreInput, excludeInput, contentExcludeInput]) {
@@ -404,9 +469,12 @@ generateButton.addEventListener("click", async () => {
 	pickFolderButton.disabled = true;
 
 	try {
-		if (!(await ensurePermission(dirHandle))) {
-			throw new Error("Folder permission was not granted");
+		if (!(await requestPermission(dirHandle))) {
+			throw new Error("Folder permission was not granted. Click Restore access and try again.");
 		}
+
+		hasFolderAccess = true;
+		updateFolderLabel();
 
 		await saveSettings();
 		const settings = currentSettings();
@@ -478,14 +546,17 @@ async function init() {
 
 	try {
 		dirHandle = await loadDirHandle();
-		if (dirHandle && !(await ensurePermission(dirHandle))) {
-			dirHandle = null;
-		}
+		hasFolderAccess = dirHandle ? await queryPermission(dirHandle) : false;
 	} catch (_error) {
 		dirHandle = null;
+		hasFolderAccess = false;
 	}
 
 	updateFolderLabel();
+
+	if (dirHandle && !hasFolderAccess) {
+		setStatus(`Folder "${dirHandle.name}" needs access permission. Click "Restore access" to grant it.`);
+	}
 
 	if (location.hash === "#codebase") {
 		document.getElementById("codebase")?.scrollIntoView();
