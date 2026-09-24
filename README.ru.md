@@ -19,6 +19,19 @@
 
 Markdown берётся из React-пропсов, при неудаче — из DOM.
 
+### Новый чат
+
+Свёрнутый чип слева сверху на странице переписки (`/c/...`). На страницах нового чата (`/`, `/text`, `/text/direct`, …) панель развёрнута.
+
+Шаблоны — в **Options → New chat**. Кнопка открывает URL нужного режима:
+
+- Battle → `/`, `/text`, `/code`, `/image`, `/search`, `/video`
+- Agent Mode → `/agent`
+- Direct → `/{category}/direct?model_a=...`
+- Side by Side → `/{category}/side-by-side?model_a=...&model_b=...`
+
+Необязательный начальный промпт вставляется в поле ввода после загрузки. Сообщение само не отправляется.
+
 ### Автоскролл
 
 Чекбокс в попапе **Disable autoscroll after AI replies**.

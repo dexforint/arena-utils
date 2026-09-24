@@ -231,3 +231,45 @@ textarea {
 #max-chars {
 	max-width: 220px;
 }
+
+#add,
+#add-template,
+#pick-folder,
+#generate {
+	background: rgb(var(--surface-raised));
+	border-color: transparent;
+	font-weight: 650;
+}
+
+select {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 8px 10px;
+	border: 1px solid rgb(var(--border));
+	border-radius: 8px;
+	background: rgb(var(--surface-bg));
+	color: hsl(var(--text-primary));
+	font: inherit;
+}
+
+.chat-templates {
+	margin-bottom: 36px;
+}
+
+.template-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px;
+}
+
+.url-preview {
+	margin: 4px 0 0;
+	color: hsl(var(--text-muted));
+	font-size: 12px;
+	line-height: 1.4;
+	word-break: break-all;
+}
+
+#prompt-text {
+	min-height: 90px;
+}

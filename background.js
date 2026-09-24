@@ -1,3 +1,5 @@
+importScripts("chatTemplates.js");
+
 const DEFAULT_PROMPTS = [
 	{
 		id: "explain-simply",
@@ -27,12 +29,16 @@ const DEFAULT_PROMPTS = [
 ];
 
 chrome.runtime.onInstalled.addListener(async () => {
-	const current = await chrome.storage.local.get(["prompts", "disableAutoscroll", "panelCollapsed", "collapseCodeBlocks"]);
+	const current = await chrome.storage.local.get(["prompts", "disableAutoscroll", "panelCollapsed", "collapseCodeBlocks", "chatTemplates"]);
 
 	const patch = {};
 
 	if (!Array.isArray(current.prompts)) {
 		patch.prompts = DEFAULT_PROMPTS;
+	}
+
+	if (!Array.isArray(current.chatTemplates)) {
+		patch.chatTemplates = ArenaChatTemplates.DEFAULTS;
 	}
 
 	if (typeof current.disableAutoscroll !== "boolean") {
@@ -61,68 +67,20 @@ function sanitizeFileName(value) {
 	);
 }
 
-function waitForDownload(downloadId) {
-	return new Promise((resolve, reject) => {
-		let settled = false;
-
-		const finish = (ok, error) => {
-			if (settled) {
-				return;
-			}
-
-			settled = true;
-			chrome.downloads.onChanged.removeListener(onChanged);
-
-			if (ok) {
-				resolve();
-			} else {
-				reject(new Error(error || "Download interrupted"));
-			}
-		};
-
-		const onChanged = (delta) => {
-			if (delta.id !== downloadId) {
-				return;
-			}
-
-			if (delta.state?.current === "complete") {
-				finish(true);
-			} else if (delta.state?.current === "interrupted") {
-				finish(false, delta.error?.current);
-			}
-		};
-
-		chrome.downloads.onChanged.addListener(onChanged);
-
-		void chrome.downloads.search({ id: downloadId }).then(([item]) => {
-			if (item?.state === "complete") {
-				finish(true);
-			} else if (item?.state === "interrupted") {
-				finish(false, item.error);
-			}
-		});
-	});
-}
-
-async function downloadMarkdown(filename, text) {
-	const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
-	const url = URL.createObjectURL(blob);
-
-	try {
-		const downloadId = await chrome.downloads.download({
-			url,
-			filename,
-			saveAs: false,
-			conflictAction: "uniquify",
-		});
-
-		await waitForDownload(downloadId);
-	} finally {
-		URL.revokeObjectURL(url);
-	}
+function makeDataUrl(text) {
+	return `data:text/markdown;charset=utf-8,${encodeURIComponent(text)}`;
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+	if (message?.type === "ARENA_OPEN_OPTIONS") {
+		const hash = typeof message.hash === "string" && message.hash.startsWith("#") ? message.hash : "";
+		void chrome.tabs.create({
+			url: chrome.runtime.getURL(`options.html${hash}`),
+		});
+		sendResponse({ ok: true });
+		return;
+	}
+
 	if (message?.type !== "ARENA_EXPORT_DOWNLOAD") {
 		return;
 	}
@@ -134,7 +92,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 		for (const file of files) {
 			const fileName = sanitizeFileName(file.name || "file.md");
 			const text = String(file.text ?? "").replace(/\r\n/g, "\n");
-			await downloadMarkdown(`${folderName}/${fileName}`, text);
+
+			await chrome.downloads.download({
+				url: makeDataUrl(text),
+				filename: `${folderName}/${fileName}`,
+				saveAs: false,
+				conflictAction: "uniquify",
+			});
 		}
 
 		sendResponse({ ok: true, count: files.length });

@@ -3,6 +3,8 @@ const collapseCode = document.getElementById("collapse-code");
 const exportButton = document.getElementById("export");
 const pickFolderButton = document.getElementById("pick-folder");
 const promptsRoot = document.getElementById("prompts");
+const promptsTitle = document.getElementById("prompts-title");
+const promptsEdit = document.getElementById("prompts-edit");
 const codebaseRoot = document.getElementById("codebase");
 const codebaseMeta = document.getElementById("codebase-meta");
 const statusEl = document.getElementById("status");
@@ -67,6 +69,51 @@ function renderButtonList(root, items, tab, emptyText) {
 	}
 }
 
+async function openChatTemplate(template) {
+	const url = ArenaChatTemplates.buildUrl(template);
+	const prompt = String(template?.prompt || "");
+
+	if (prompt) {
+		await chrome.storage.local.set({
+			pendingChatPrompt: prompt,
+			pendingChatUrl: url,
+		});
+	} else {
+		await chrome.storage.local.remove(["pendingChatPrompt", "pendingChatUrl"]);
+	}
+
+	await chrome.tabs.create({ url });
+	window.close();
+}
+
+function renderChatTemplates(templates) {
+	promptsTitle.textContent = "New chat";
+	promptsEdit.href = "options.html#chat-templates";
+	promptsRoot.replaceChildren();
+
+	if (!Array.isArray(templates) || templates.length === 0) {
+		const empty = document.createElement("div");
+		empty.className = "empty";
+		empty.textContent = "No templates yet. Open Edit to add some.";
+		promptsRoot.appendChild(empty);
+		return;
+	}
+
+	for (const template of templates) {
+		const button = document.createElement("button");
+		button.type = "button";
+		button.className = "prompt";
+		button.innerHTML = `<span class="template-name"></span><span class="template-meta"></span>`;
+		button.querySelector(".template-name").textContent = template.name || "Untitled";
+		const meta = ArenaChatTemplates.summarize(template);
+		button.querySelector(".template-meta").textContent = String(template.prompt || "").trim() ? `${meta} · prompt` : meta;
+		button.addEventListener("click", () => {
+			void openChatTemplate(template);
+		});
+		promptsRoot.appendChild(button);
+	}
+}
+
 function renderCodebase(snapshot, tab) {
 	if (snapshot?.chunks?.length) {
 		codebaseMeta.textContent = `${snapshot.folderName} · ${snapshot.stats.parts} parts · ${snapshot.stats.characters} chars`;
@@ -92,12 +139,12 @@ async function init() {
 		disableAutoscroll: false,
 		collapseCodeBlocks: true,
 		prompts: [],
+		chatTemplates: [],
 		codebaseSnapshot: null,
 	});
 
 	autoscroll.checked = Boolean(stored.disableAutoscroll);
 	collapseCode.checked = stored.collapseCodeBlocks !== false;
-	renderButtonList(promptsRoot, stored.prompts, tab, "No prompts yet. Open Edit to add some.");
 	renderCodebase(stored.codebaseSnapshot, tab);
 
 	pickFolderButton.addEventListener("click", async () => {
@@ -116,18 +163,6 @@ async function init() {
 		}
 	});
 
-	if (!isArenaTab(tab)) {
-		applyTheme(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-		statusEl.textContent = "Open an arena.ai chat first";
-		exportButton.disabled = true;
-		return;
-	}
-
-	const status = await sendToTab(tab.id, { type: "ARENA_GET_STATUS" });
-	applyTheme(status?.theme === "dark" ? "dark" : "light");
-	statusEl.textContent = status?.ok ? `${status.messageCount || 0} messages on this page` : "Reload the arena.ai tab after updating the extension";
-	exportButton.disabled = false;
-
 	autoscroll.addEventListener("change", async () => {
 		await chrome.storage.local.set({
 			disableAutoscroll: autoscroll.checked,
@@ -139,6 +174,21 @@ async function init() {
 			collapseCodeBlocks: collapseCode.checked,
 		});
 	});
+
+	if (!isArenaTab(tab)) {
+		applyTheme(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+		statusEl.textContent = "Open a template to start a chat";
+		exportButton.disabled = true;
+		renderChatTemplates(stored.chatTemplates);
+		return;
+	}
+
+	renderButtonList(promptsRoot, stored.prompts, tab, "No prompts yet. Open Edit to add some.");
+
+	const status = await sendToTab(tab.id, { type: "ARENA_GET_STATUS" });
+	applyTheme(status?.theme === "dark" ? "dark" : "light");
+	statusEl.textContent = status?.ok ? `${status.messageCount || 0} messages on this page` : "Reload the arena.ai tab after updating the extension";
+	exportButton.disabled = false;
 
 	exportButton.addEventListener("click", async () => {
 		exportButton.disabled = true;

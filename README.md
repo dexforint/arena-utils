@@ -19,6 +19,19 @@ Each turn becomes a Markdown file in a folder named after the chat id from the U
 
 Markdown is taken from React props when possible, with a DOM fallback.
 
+### New chat
+
+Collapsed chip in the top-left of a conversation (`/c/...`). Expanded on new-chat pages (`/`, `/text`, `/text/direct`, …).
+
+Templates live in **Options → New chat**. Each button opens a URL for that mode:
+
+- Battle → `/`, `/text`, `/code`, `/image`, `/search`, `/video`
+- Agent Mode → `/agent`
+- Direct → `/{category}/direct?model_a=...`
+- Side by Side → `/{category}/side-by-side?model_a=...&model_b=...`
+
+Optional initial prompt is inserted into the composer after the page loads. It is not sent automatically.
+
 ### Autoscroll
 
 Popup checkbox **Disable autoscroll after AI replies**.

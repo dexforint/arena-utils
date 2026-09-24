@@ -180,3 +180,16 @@ section {
 	padding-top: 4px;
 	border-top: 1px solid rgb(var(--border-faint));
 }
+
+.prompt .template-name {
+	display: block;
+	font-weight: 650;
+}
+
+.prompt .template-meta {
+	display: block;
+	margin-top: 2px;
+	color: hsl(var(--text-muted));
+	font-size: 11px;
+	line-height: 1.35;
+}

@@ -1,6 +1,7 @@
 let exportInProgress = false;
 let requestCounter = 0;
 let panelCollapsed = true;
+let newChatCollapsed = true;
 let collapseCodeBlocks = true;
 let highlightTimer = 0;
 let refreshTimer = 0;
@@ -11,12 +12,16 @@ let currentIndex = -1;
 let pinnedUntil = 0;
 let boundScroller = null;
 let cachedMessages = [];
+let chatTemplates = [];
+let pendingPromptInFlight = false;
 
 const pendingRequests = new Map();
 const HOST_ID = "__arena_utils_host__";
+const NEW_CHAT_HOST_ID = "__arena_utils_new_chat_host__";
 const PAGE_STYLE_ID = "__arena_utils_page_style__";
 const AUTOSCROLL_KEY = "__arena_utils_disable_autoscroll";
 const ALLOW_SCROLL_KEY = "__arena_utils_allow_scroll";
+const PENDING_PROMPT_KEY = "__arena_utils_pending_prompt";
 const MESSAGE_SCROLL_OFFSET = 16;
 const CODE_TOGGLE_CLASS = "__arena-utils-code-toggle";
 const CODE_COLLAPSED_CLASS = "__arena-utils-code-collapsed";
@@ -228,6 +233,156 @@ const PANEL_CSS = `
 }
 `;
 
+const NEW_CHAT_CSS = `
+:host {
+	all: initial;
+	font-family: Inter,Inter Fallback,ui-sans-serif,system-ui,sans-serif;
+	--header-primary: 60 3% 14%;
+	--text-primary: 24 6% 17%;
+	--text-secondary: 30 7% 24%;
+	--text-muted: 37 5% 52%;
+	--interactive-active: 60 4% 11%;
+	--arena-bg: rgb(252, 250, 248);
+	--arena-raised: rgb(240, 235, 229);
+	--arena-border: rgb(225, 222, 219);
+	--arena-border-faint: rgb(229, 231, 235);
+	color: hsl(var(--text-primary));
+}
+
+:host([data-theme="dark"]) {
+	--header-primary: 0 0% 100%;
+	--text-primary: 33 31% 94%;
+	--text-secondary: 35 20% 88%;
+	--text-muted: 35 6% 38%;
+	--interactive-active: 0 0% 100%;
+	--arena-bg: rgb(22, 20, 18);
+	--arena-raised: rgb(36, 32, 28);
+	--arena-border: rgb(58, 52, 46);
+	--arena-border-faint: rgb(48, 44, 40);
+}
+
+.panel {
+	width: 260px;
+	color: hsl(var(--text-primary));
+	background: color-mix(in srgb, var(--arena-bg) 92%, transparent);
+	border: 1px solid var(--arena-border);
+	border-radius: 12px;
+	box-shadow: 0 12px 40px rgb(46 43 41 / 10%);
+	backdrop-filter: blur(16px);
+	overflow: hidden;
+}
+
+.panel[data-collapsed="true"] {
+	width: auto;
+}
+
+.toggle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	margin: 0;
+	padding: 8px 10px;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	font: inherit;
+}
+
+.toggle:hover {
+	background: var(--arena-raised);
+}
+
+.title {
+	font-size: 12px;
+	font-weight: 650;
+	letter-spacing: 0.02em;
+	color: hsl(var(--header-primary));
+}
+
+.chevron {
+	margin-left: auto;
+	font-size: 11px;
+	color: hsl(var(--text-muted));
+}
+
+.body {
+	display: none;
+	max-height: min(62vh, 520px);
+	overflow: auto;
+	border-top: 1px solid var(--arena-border-faint);
+	background: var(--arena-bg);
+}
+
+.panel[data-collapsed="false"] .body {
+	display: block;
+}
+
+.templates {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 8px;
+}
+
+.empty {
+	padding: 12px 10px 8px;
+	color: hsl(var(--text-muted));
+	font-size: 12px;
+	line-height: 1.4;
+}
+
+.template {
+	width: 100%;
+	padding: 8px 10px;
+	border: 1px solid var(--arena-border-faint);
+	border-radius: 8px;
+	background: transparent;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+	font: inherit;
+}
+
+.template:hover {
+	background: var(--arena-raised);
+}
+
+.template-name {
+	display: block;
+	font-size: 12px;
+	font-weight: 650;
+	color: hsl(var(--text-primary));
+}
+
+.template-meta {
+	display: block;
+	margin-top: 2px;
+	font-size: 10px;
+	line-height: 1.35;
+	color: hsl(var(--text-muted));
+}
+
+.edit {
+	display: block;
+	width: 100%;
+	margin: 0;
+	padding: 2px 10px 10px;
+	border: 0;
+	background: transparent;
+	color: hsl(var(--text-muted));
+	cursor: pointer;
+	font: inherit;
+	font-size: 10px;
+	text-align: left;
+}
+
+.edit:hover {
+	color: hsl(var(--text-secondary));
+}
+`;
+
 window.addEventListener("message", (event) => {
 	if (event.source !== window) {
 		return;
@@ -300,6 +455,10 @@ function getConversationIdFromUrl() {
 
 	const parts = location.pathname.split("/").filter(Boolean);
 	return parts[parts.length - 1] || "arena-dialog";
+}
+
+function isExistingChatPage() {
+	return /\/c\/[^/]+/i.test(location.pathname);
 }
 
 function buildFolderName() {
@@ -818,6 +977,31 @@ function setTextareaValue(textarea, value) {
 	textarea.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+function resizeComposer(textarea) {
+	textarea.style.height = "auto";
+	textarea.style.height = `${Math.min(textarea.scrollHeight, Math.round(window.innerHeight * 0.4))}px`;
+}
+
+function fillComposer(text) {
+	const value = String(text || "");
+	const textarea = getComposerTextarea();
+	if (!textarea) {
+		throw new Error("Composer textarea not found");
+	}
+
+	setTextareaValue(textarea, value);
+	textarea.focus();
+
+	try {
+		const cursor = value.length;
+		textarea.setSelectionRange(cursor, cursor);
+	} catch (_error) {
+		/* ignore */
+	}
+
+	resizeComposer(textarea);
+}
+
 function insertPrompt(text) {
 	const value = String(text || "");
 	const textarea = getComposerTextarea();
@@ -837,9 +1021,122 @@ function insertPrompt(text) {
 		/* ignore */
 	}
 
-	textarea.style.height = "auto";
-	textarea.style.height = `${Math.min(textarea.scrollHeight, Math.round(window.innerHeight * 0.4))}px`;
+	resizeComposer(textarea);
 	showToast("Prompt inserted");
+}
+
+function sleep(ms) {
+	return new Promise((resolve) => {
+		window.setTimeout(resolve, ms);
+	});
+}
+
+function readPendingPrompt() {
+	try {
+		return sessionStorage.getItem(PENDING_PROMPT_KEY) || "";
+	} catch (_error) {
+		return "";
+	}
+}
+
+function clearPendingPrompt() {
+	try {
+		sessionStorage.removeItem(PENDING_PROMPT_KEY);
+	} catch (_error) {
+		/* ignore */
+	}
+
+	void chrome.storage.local.remove(["pendingChatPrompt", "pendingChatUrl"]);
+}
+
+function pendingPromptMatchesPage(pendingUrl) {
+	if (!pendingUrl) {
+		return true;
+	}
+
+	try {
+		const expected = new URL(pendingUrl, location.origin);
+		return expected.pathname === location.pathname && expected.search === location.search;
+	} catch (_error) {
+		return true;
+	}
+}
+
+async function insertPendingPrompt() {
+	if (pendingPromptInFlight) {
+		return;
+	}
+
+	let text = readPendingPrompt();
+	let pendingUrl = "";
+
+	if (!text) {
+		const stored = await chrome.storage.local.get({
+			pendingChatPrompt: "",
+			pendingChatUrl: "",
+		});
+		text = String(stored.pendingChatPrompt || "");
+		pendingUrl = String(stored.pendingChatUrl || "");
+		if (text && !pendingPromptMatchesPage(pendingUrl)) {
+			return;
+		}
+	}
+
+	if (!text) {
+		return;
+	}
+
+	pendingPromptInFlight = true;
+
+	try {
+		for (let attempt = 0; attempt < 50; attempt += 1) {
+			if (!readPendingPrompt()) {
+				const stored = await chrome.storage.local.get({ pendingChatPrompt: "" });
+				if (!stored.pendingChatPrompt) {
+					return;
+				}
+			}
+
+			try {
+				fillComposer(text);
+				await sleep(350);
+				const textarea = getComposerTextarea();
+				if (textarea && textarea.value !== text) {
+					fillComposer(text);
+				}
+				clearPendingPrompt();
+				showToast("Prompt inserted");
+				return;
+			} catch (_error) {
+				await sleep(100);
+			}
+		}
+	} finally {
+		pendingPromptInFlight = false;
+	}
+}
+
+function openChatTemplate(template) {
+	const url = ArenaChatTemplates.buildUrl(template, location.origin);
+	const prompt = String(template?.prompt || "");
+
+	try {
+		if (prompt) {
+			sessionStorage.setItem(PENDING_PROMPT_KEY, prompt);
+		} else {
+			sessionStorage.removeItem(PENDING_PROMPT_KEY);
+		}
+	} catch (_error) {
+		/* ignore */
+	}
+
+	const next = new URL(url, location.origin);
+	if (next.pathname === location.pathname && next.search === location.search) {
+		void insertPendingPrompt();
+		return;
+	}
+
+	location.assign(next.href);
 }
 
 function writeAutoscrollFlag(disabled) {
@@ -894,8 +1191,7 @@ function getPageTheme() {
 	return document.documentElement.classList.contains("dark") ? "dark" : "light";
 }
 
-function applyPageTheme() {
-	const host = document.getElementById(HOST_ID);
+function applyThemeToHost(host) {
 	if (!host) {
 		return;
 	}
@@ -928,6 +1224,11 @@ function applyPageTheme() {
 	if (send) {
 		host.style.setProperty("--arena-border", getComputedStyle(send).borderTopColor);
 	}
+}
+
+function applyPageTheme() {
+	applyThemeToHost(document.getElementById(HOST_ID));
+	applyThemeToHost(document.getElementById(NEW_CHAT_HOST_ID));
 }
 
 function getCodeHeader(block) {
@@ -1516,6 +1817,119 @@ function ensurePanel() {
 	applyPageTheme();
 }
 
+function getNewChatPanelEls() {
+	const host = document.getElementById(NEW_CHAT_HOST_ID);
+	if (!host?.shadowRoot) {
+		return null;
+	}
+
+	return {
+		host,
+		panel: host.shadowRoot.querySelector(".panel"),
+		templates: host.shadowRoot.querySelector(".templates"),
+		chevron: host.shadowRoot.querySelector(".chevron"),
+	};
+}
+
+function positionNewChatPanel() {
+	const host = document.getElementById(NEW_CHAT_HOST_ID);
+	if (!host) {
+		return;
+	}
+
+	const target = document.getElementById("root-portal-target");
+	if (!target) {
+		host.style.top = "12px";
+		host.style.left = "12px";
+		return;
+	}
+
+	const rect = target.getBoundingClientRect();
+	host.style.top = `${Math.max(8, Math.round(rect.top + 12))}px`;
+	host.style.left = `${Math.max(8, Math.round(rect.left + 12))}px`;
+}
+
+function setNewChatCollapsed(collapsed) {
+	newChatCollapsed = Boolean(collapsed);
+	const els = getNewChatPanelEls();
+	if (!els?.panel) {
+		return;
+	}
+
+	els.panel.dataset.collapsed = newChatCollapsed ? "true" : "false";
+	els.chevron.textContent = newChatCollapsed ? "▾" : "▴";
+}
+
+function renderNewChatList() {
+	const els = getNewChatPanelEls();
+	if (!els) {
+		return;
+	}
+
+	els.templates.replaceChildren();
+
+	if (!Array.isArray(chatTemplates) || chatTemplates.length === 0) {
+		const empty = document.createElement("div");
+		empty.className = "empty";
+		empty.textContent = "No templates yet. Add some in Options.";
+		els.templates.appendChild(empty);
+		return;
+	}
+
+	for (const template of chatTemplates) {
+		const button = document.createElement("button");
+		button.type = "button";
+		button.className = "template";
+		button.innerHTML = `<span class="template-name"></span><span class="template-meta"></span>`;
+		button.querySelector(".template-name").textContent = template.name || "Untitled";
+		const meta = ArenaChatTemplates.summarize(template);
+		button.querySelector(".template-meta").textContent = String(template.prompt || "").trim() ? `${meta} · prompt` : meta;
+		button.addEventListener("click", () => openChatTemplate(template));
+		els.templates.appendChild(button);
+	}
+}
+
+function ensureNewChatPanel() {
+	if (document.getElementById(NEW_CHAT_HOST_ID)) {
+		positionNewChatPanel();
+		return;
+	}
+
+	const host = document.createElement("div");
+	host.id = NEW_CHAT_HOST_ID;
+	host.style.cssText = "position:fixed;top:12px;left:12px;z-index:2147483646;";
+
+	const shadow = host.attachShadow({ mode: "open" });
+	shadow.innerHTML = `
+		<style>${NEW_CHAT_CSS}</style>
+		<div class="panel" data-collapsed="${newChatCollapsed ? "true" : "false"}">
+			<button class="toggle" type="button" title="Toggle new chat templates">
+				<span class="title">New chat</span>
+				<span class="chevron">${newChatCollapsed ? "▾" : "▴"}</span>
+			</button>
+			<div class="body">
+				<div class="templates"></div>
+				<button class="edit" type="button">Edit templates</button>
+			</div>
+		</div>
+	`;
+
+	shadow.querySelector(".toggle").addEventListener("click", () => {
+		setNewChatCollapsed(!newChatCollapsed);
+	});
+	shadow.querySelector(".edit").addEventListener("click", () => {
+		void chrome.runtime.sendMessage({
+			type: "ARENA_OPEN_OPTIONS",
+			hash: "#chat-templates",
+		});
+	});
+
+	document.documentElement.appendChild(host);
+	renderNewChatList();
+	positionNewChatPanel();
+	applyPageTheme();
+}
+
 function scheduleRefresh() {
 	window.clearTimeout(refreshTimer);
 	refreshTimer = window.setTimeout(() => {
@@ -1523,12 +1937,16 @@ function scheduleRefresh() {
 			lastUrl = location.href;
 			lastSignature = "";
 			currentIndex = -1;
+			setNewChatCollapsed(isExistingChatPage());
+			void insertPendingPrompt();
 		}
 
 		restoreNativeScrollbars();
 		ensurePanel();
+		ensureNewChatPanel();
 		applyPageTheme();
 		renderPanelList();
+		positionNewChatPanel();
 	}, 200);
 }
 
@@ -1540,14 +1958,21 @@ async function init() {
 		disableAutoscroll: false,
 		panelCollapsed: true,
 		collapseCodeBlocks: true,
+		chatTemplates: [],
 	});
 
 	panelCollapsed = Boolean(stored.panelCollapsed);
 	collapseCodeBlocks = stored.collapseCodeBlocks !== false;
+	chatTemplates = Array.isArray(stored.chatTemplates) ? stored.chatTemplates : [];
+	newChatCollapsed = isExistingChatPage();
 	writeAutoscrollFlag(Boolean(stored.disableAutoscroll));
 	ensurePanel();
+	ensureNewChatPanel();
 	setPanelCollapsed(panelCollapsed, false);
+	setNewChatCollapsed(newChatCollapsed);
 	renderPanelList();
+	renderNewChatList();
+	void insertPendingPrompt();
 
 	new MutationObserver(() => {
 		scheduleRefresh();
@@ -1565,7 +1990,10 @@ async function init() {
 
 	window.addEventListener("popstate", scheduleRefresh);
 	window.addEventListener("scroll", onScrollerScroll, { passive: true });
-	window.addEventListener("resize", scheduleCurrentSync);
+	window.addEventListener("resize", () => {
+		scheduleCurrentSync();
+		positionNewChatPanel();
+	});
 	document.addEventListener("keydown", onKeyDown, true);
 }
 
@@ -1585,6 +2013,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
 	if (changes.collapseCodeBlocks) {
 		collapseCodeBlocks = changes.collapseCodeBlocks.newValue !== false;
 		processCodeBlocks();
+	}
+
+	if (changes.chatTemplates) {
+		chatTemplates = Array.isArray(changes.chatTemplates.newValue) ? changes.chatTemplates.newValue : [];
+		renderNewChatList();
 	}
 });
 

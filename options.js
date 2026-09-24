@@ -1,6 +1,8 @@
 const list = document.getElementById("list");
 const addButton = document.getElementById("add");
 const collapseCodeInput = document.getElementById("collapse-code");
+const templateList = document.getElementById("template-list");
+const addTemplateButton = document.getElementById("add-template");
 const pickFolderButton = document.getElementById("pick-folder");
 const generateButton = document.getElementById("generate");
 const clearButton = document.getElementById("clear-codebase");
@@ -16,7 +18,9 @@ const IDB_NAME = "arena-utils";
 const IDB_STORE = "handles";
 
 let saveTimer = 0;
+let templateSaveTimer = 0;
 let prompts = [];
+let chatTemplates = [];
 let dirHandle = null;
 let generating = false;
 
@@ -32,6 +36,13 @@ function scheduleSave() {
 	window.clearTimeout(saveTimer);
 	saveTimer = window.setTimeout(() => {
 		void chrome.storage.local.set({ prompts });
+	}, 200);
+}
+
+function scheduleTemplateSave() {
+	window.clearTimeout(templateSaveTimer);
+	templateSaveTimer = window.setTimeout(() => {
+		void chrome.storage.local.set({ chatTemplates });
 	}, 200);
 }
 
@@ -79,6 +90,151 @@ function renderPrompts() {
 		});
 
 		list.appendChild(card);
+	}
+}
+
+function fillSelect(select, items, value) {
+	select.replaceChildren();
+
+	for (const item of items) {
+		const option = document.createElement("option");
+		option.value = item.id;
+		option.textContent = item.name;
+		select.appendChild(option);
+	}
+
+	if (value && items.some((item) => item.id === value)) {
+		select.value = value;
+	} else if (items[0]) {
+		select.value = items[0].id;
+	}
+}
+
+function syncTemplateCardFields(card, template) {
+	const categoryWrap = card.querySelector(".category-field");
+	const modelAWrap = card.querySelector(".model-a-field");
+	const modelBWrap = card.querySelector(".model-b-field");
+	const categorySelect = card.querySelector(".category");
+	const preview = card.querySelector(".url-preview");
+	const type = template.chatType || "direct";
+	const cats = ArenaChatTemplates.categoriesForType(type);
+
+	categoryWrap.hidden = cats.length === 0;
+	modelAWrap.hidden = type === "battle" || type === "agent";
+	modelBWrap.hidden = type !== "side-by-side";
+
+	if (cats.length) {
+		fillSelect(categorySelect, cats, template.category);
+		template.category = categorySelect.value;
+	}
+
+	preview.textContent = ArenaChatTemplates.buildUrl(template);
+}
+
+function renderTemplates() {
+	templateList.replaceChildren();
+
+	if (chatTemplates.length === 0) {
+		const empty = document.createElement("div");
+		empty.className = "empty";
+		empty.textContent = "No chat templates yet. Add one and it will show up in the New chat panel.";
+		templateList.appendChild(empty);
+		return;
+	}
+
+	for (const template of chatTemplates) {
+		const card = document.createElement("article");
+		card.className = "card";
+		card.innerHTML = `
+			<input class="name" type="text" placeholder="Button name" />
+			<div class="template-grid">
+				<label class="field">
+					<span>Chat type</span>
+					<select class="chat-type"></select>
+				</label>
+				<label class="field category-field">
+					<span>Category</span>
+					<select class="category"></select>
+				</label>
+				<label class="field model-a-field">
+					<span>Model A</span>
+					<input class="model-a" type="text" placeholder="gemini-3.8-flash-high" spellcheck="false" />
+				</label>
+				<label class="field model-b-field">
+					<span>Model B</span>
+					<input class="model-b" type="text" placeholder="claude-sonnet-4-6-search" spellcheck="false" />
+				</label>
+			</div>
+			<label class="field">
+				<span>Initial prompt (optional)</span>
+				<textarea class="prompt-text" placeholder="Leave empty to open an empty composer"></textarea>
+			</label>
+			<p class="url-preview"></p>
+			<div class="card-actions">
+				<button class="delete" type="button">Delete</button>
+			</div>
+		`;
+
+		const nameInput = card.querySelector(".name");
+		const typeSelect = card.querySelector(".chat-type");
+		const categorySelect = card.querySelector(".category");
+		const modelAInput = card.querySelector(".model-a");
+		const modelBInput = card.querySelector(".model-b");
+		const promptInput = card.querySelector(".prompt-text");
+
+		nameInput.value = template.name || "";
+		modelAInput.value = template.modelA || "";
+		modelBInput.value = template.modelB || "";
+		promptInput.value = template.prompt || "";
+		fillSelect(typeSelect, ArenaChatTemplates.TYPES, template.chatType || "direct");
+		template.chatType = typeSelect.value;
+		syncTemplateCardFields(card, template);
+
+		nameInput.addEventListener("input", () => {
+			template.name = nameInput.value;
+			scheduleTemplateSave();
+		});
+
+		typeSelect.addEventListener("change", () => {
+			template.chatType = typeSelect.value;
+			if (template.chatType !== "side-by-side") {
+				template.modelB = "";
+				modelBInput.value = "";
+			}
+			syncTemplateCardFields(card, template);
+			scheduleTemplateSave();
+		});
+
+		categorySelect.addEventListener("change", () => {
+			template.category = categorySelect.value;
+			syncTemplateCardFields(card, template);
+			scheduleTemplateSave();
+		});
+
+		modelAInput.addEventListener("input", () => {
+			template.modelA = modelAInput.value.trim();
+			syncTemplateCardFields(card, template);
+			scheduleTemplateSave();
+		});
+
+		modelBInput.addEventListener("input", () => {
+			template.modelB = modelBInput.value.trim();
+			syncTemplateCardFields(card, template);
+			scheduleTemplateSave();
+		});
+
+		promptInput.addEventListener("input", () => {
+			template.prompt = promptInput.value;
+			scheduleTemplateSave();
+		});
+
+		card.querySelector(".delete").addEventListener("click", () => {
+			chatTemplates = chatTemplates.filter((item) => item.id !== template.id);
+			scheduleTemplateSave();
+			renderTemplates();
+		});
+
+		templateList.appendChild(card);
 	}
 }
 
@@ -191,6 +347,20 @@ addButton.addEventListener("click", () => {
 	renderPrompts();
 });
 
+addTemplateButton.addEventListener("click", () => {
+	chatTemplates.push({
+		id: uid(),
+		name: "New template",
+		chatType: "direct",
+		category: "text",
+		modelA: "",
+		modelB: "",
+		prompt: "",
+	});
+	scheduleTemplateSave();
+	renderTemplates();
+});
+
 collapseCodeInput.addEventListener("change", async () => {
 	await chrome.storage.local.set({
 		collapseCodeBlocks: collapseCodeInput.checked,
@@ -280,12 +450,15 @@ async function init() {
 	const stored = await chrome.storage.local.get({
 		prompts: [],
 		collapseCodeBlocks: true,
+		chatTemplates: ArenaChatTemplates.DEFAULTS,
 		codebaseSettings: null,
 		codebaseSnapshot: null,
 	});
 
 	prompts = Array.isArray(stored.prompts) ? stored.prompts : [];
+	chatTemplates = Array.isArray(stored.chatTemplates) ? stored.chatTemplates : [];
 	renderPrompts();
+	renderTemplates();
 
 	collapseCodeInput.checked = stored.collapseCodeBlocks !== false;
 
@@ -316,6 +489,10 @@ async function init() {
 
 	if (location.hash === "#codebase") {
 		document.getElementById("codebase")?.scrollIntoView();
+	}
+
+	if (location.hash === "#chat-templates") {
+		document.getElementById("chat-templates")?.scrollIntoView();
 	}
 }
 
