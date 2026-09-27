@@ -80,6 +80,15 @@
 		});
 	}
 
+	const DEFAULT_ARTICLE_MODEL = "gemini-3.8-flash-high";
+
+	const DEFAULT_ARTICLE_TEMPLATE = [
+		"Понятно объясни следующую статью. Не упусти важные и интересные детали. Если считаешь нужным, то ты можешь дать свои комментарии к статье как специалист в данной теме.",
+		"````markdown",
+		"{article}",
+		"````",
+	].join("\n");
+
 	globalThis.ArenaShared = {
 		sanitizeFileName,
 		prefixListItem,
@@ -87,5 +96,7 @@
 		BOOKMARKS_KEY,
 		getBookmarks,
 		setBookmarks,
+		DEFAULT_ARTICLE_MODEL,
+		DEFAULT_ARTICLE_TEMPLATE,
 	};
 })();

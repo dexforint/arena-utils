@@ -10,6 +10,9 @@ const codebaseMeta = document.getElementById("codebase-meta");
 const statusEl = document.getElementById("status");
 const bookmarksRoot = document.getElementById("bookmarks");
 const bookmarksCount = document.getElementById("bookmarks-count");
+const articleSection = document.getElementById("article-section");
+const articleMeta = document.getElementById("article-meta");
+const explainArticleButton = document.getElementById("explain-article");
 
 function applyTheme(theme) {
 	const mode = theme === "dark" ? "dark" : "light";
@@ -35,6 +38,80 @@ async function sendToTab(tabId, message) {
 			error: error instanceof Error ? error.message : String(error),
 		};
 	}
+}
+
+function isHttpTab(tab) {
+	return Boolean(tab?.url && /^https?:\/\//i.test(tab.url));
+}
+
+function isArenaUrl(url) {
+	return /^https:\/\/([^/]+\.)?arena\.ai\//i.test(String(url || ""));
+}
+
+async function checkArticlePresence(tabId) {
+	try {
+		const [result] = await chrome.scripting.executeScript({
+			target: { tabId },
+			func: () => {
+				const articles = document.querySelectorAll("article");
+				let largest = 0;
+
+				for (const el of articles) {
+					const text = String(el.innerText || el.textContent || "").trim();
+					if (text.length > largest) {
+						largest = text.length;
+					}
+				}
+
+				return {
+					count: articles.length,
+					chars: largest,
+				};
+			},
+		});
+
+		return result?.result || { count: 0, chars: 0 };
+	} catch (_error) {
+		return { count: 0, chars: 0 };
+	}
+}
+
+async function extractArticleFromTab(tabId) {
+	await chrome.scripting.executeScript({
+		target: { tabId },
+		files: ["articleExtractor.js"],
+	});
+
+	const [result] = await chrome.scripting.executeScript({
+		target: { tabId },
+		func: () => {
+			if (typeof globalThis.__arenaExtractArticle !== "function") {
+				return { ok: false, reason: "Extractor is not available" };
+			}
+			return globalThis.__arenaExtractArticle();
+		},
+	});
+
+	return result?.result || { ok: false, reason: "Empty extraction result" };
+}
+
+function renderArticlePrompt(template, article) {
+	const source = String(template || "");
+	const text = String(article?.markdown || "");
+	const title = String(article?.title || "").trim();
+	const url = String(article?.url || "").trim();
+
+	const hasArticleSlot = source.includes("{article}");
+	const head = source.replaceAll("{title}", title).replaceAll("{url}", url).replaceAll("{article}", text);
+
+	return hasArticleSlot ? head : `${head}\n\n\`\`\`\n${text}\n\`\`\``;
+}
+
+function buildArticleChatUrl(model) {
+	const id = String(model || "").trim() || ArenaShared.DEFAULT_ARTICLE_MODEL;
+	const url = new URL("https://arena.ai/text/direct");
+	url.searchParams.set("model_a", id);
+	return url.toString();
 }
 
 async function readBookmarks() {
@@ -219,6 +296,35 @@ function renderBookmarks(bookmarks) {
 	}
 }
 
+async function renderArticleSection(tab) {
+	if (!articleSection) {
+		return;
+	}
+
+	if (!isHttpTab(tab) || isArenaUrl(tab.url)) {
+		articleSection.hidden = true;
+		return;
+	}
+
+	articleSection.hidden = false;
+	explainArticleButton.disabled = true;
+	articleMeta.textContent = "Checking page…";
+
+	const info = await checkArticlePresence(tab.id);
+
+	if (!info || info.count === 0) {
+		articleMeta.textContent = "No <article> element on this page";
+		explainArticleButton.disabled = true;
+		return;
+	}
+
+	const count = info.count;
+	const chars = info.chars || 0;
+	articleMeta.textContent = `${count} article${count > 1 ? "s" : ""} · ~${chars.toLocaleString()} characters`;
+	explainArticleButton.disabled = false;
+	explainArticleButton.dataset.tabId = String(tab.id);
+}
+
 async function init() {
 	const tab = await getActiveTab();
 	const stored = await chrome.storage.local.get({
@@ -234,6 +340,7 @@ async function init() {
 	collapseCode.checked = stored.collapseCodeBlocks !== false;
 	renderCodebase(stored.codebaseSnapshot, tab);
 	renderBookmarks(stored.bookmarks);
+	void renderArticleSection(tab);
 
 	pickFolderButton.addEventListener("click", async () => {
 		await chrome.tabs.create({
@@ -302,6 +409,50 @@ async function init() {
 			return;
 		}
 		window.close();
+	});
+}
+
+if (explainArticleButton) {
+	explainArticleButton.addEventListener("click", async () => {
+		const tabId = Number(explainArticleButton.dataset.tabId || 0);
+		if (!tabId) {
+			articleMeta.textContent = "No target tab";
+			return;
+		}
+
+		explainArticleButton.disabled = true;
+		articleMeta.textContent = "Extracting article…";
+
+		try {
+			const extracted = await extractArticleFromTab(tabId);
+			if (!extracted?.ok) {
+				throw new Error(extracted?.reason || "Failed to extract article");
+			}
+
+			const stored = await chrome.storage.local.get({
+				articleTemplate: ArenaShared.DEFAULT_ARTICLE_TEMPLATE,
+				articleModel: ArenaShared.DEFAULT_ARTICLE_MODEL,
+			});
+
+			const template = String(stored.articleTemplate || ArenaShared.DEFAULT_ARTICLE_TEMPLATE);
+			const model = String(stored.articleModel || ArenaShared.DEFAULT_ARTICLE_MODEL).trim();
+
+			const prompt = renderArticlePrompt(template, extracted);
+			const url = buildArticleChatUrl(model);
+
+			await chrome.storage.local.set({
+				pendingChatPrompt: prompt,
+				pendingChatUrl: url,
+				pendingChatAutoSend: true,
+				pendingChatAutoSendUntil: Date.now() + 5 * 60 * 1000,
+			});
+
+			await chrome.tabs.create({ url, active: true });
+			window.close();
+		} catch (error) {
+			articleMeta.textContent = error instanceof Error ? error.message : String(error);
+			explainArticleButton.disabled = false;
+		}
 	});
 }
 

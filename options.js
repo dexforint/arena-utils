@@ -14,12 +14,16 @@ const contentExcludeInput = document.getElementById("content-exclude");
 const statusEl = document.getElementById("codebase-status");
 const chunkList = document.getElementById("chunk-list");
 const restoreAccessButton = document.getElementById("restore-access");
+const articleModelInput = document.getElementById("article-model");
+const articleTemplateInput = document.getElementById("article-template");
+const resetArticleTemplateButton = document.getElementById("reset-article-template");
 
 const IDB_NAME = "arena-utils";
 const IDB_STORE = "handles";
 
 let saveTimer = 0;
 let templateSaveTimer = 0;
+let articleSaveTimer = 0;
 let prompts = [];
 let chatTemplates = [];
 let dirHandle = null;
@@ -46,6 +50,19 @@ function scheduleTemplateSave() {
 	templateSaveTimer = window.setTimeout(() => {
 		void chrome.storage.local.set({ chatTemplates });
 	}, 200);
+}
+
+function scheduleArticleSave() {
+	window.clearTimeout(articleSaveTimer);
+	articleSaveTimer = window.setTimeout(() => {
+		const model = String(articleModelInput.value || "").trim() || ArenaShared.DEFAULT_ARTICLE_MODEL;
+		const template = String(articleTemplateInput.value || "");
+
+		void chrome.storage.local.set({
+			articleModel: model,
+			articleTemplate: template,
+		});
+	}, 300);
 }
 
 function renderPrompts() {
@@ -511,6 +528,15 @@ clearButton.addEventListener("click", async () => {
 	setStatus("Generated codebase prompts cleared.");
 });
 
+articleModelInput.addEventListener("input", scheduleArticleSave);
+articleTemplateInput.addEventListener("input", scheduleArticleSave);
+
+resetArticleTemplateButton.addEventListener("click", () => {
+	articleModelInput.value = ArenaShared.DEFAULT_ARTICLE_MODEL;
+	articleTemplateInput.value = ArenaShared.DEFAULT_ARTICLE_TEMPLATE;
+	scheduleArticleSave();
+});
+
 async function init() {
 	applyOptionsTheme();
 	window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyOptionsTheme);
@@ -521,6 +547,8 @@ async function init() {
 		chatTemplates: ArenaChatTemplates.DEFAULTS,
 		codebaseSettings: null,
 		codebaseSnapshot: null,
+		articleModel: ArenaShared.DEFAULT_ARTICLE_MODEL,
+		articleTemplate: ArenaShared.DEFAULT_ARTICLE_TEMPLATE,
 	});
 
 	prompts = Array.isArray(stored.prompts) ? stored.prompts : [];
@@ -529,6 +557,9 @@ async function init() {
 	renderTemplates();
 
 	collapseCodeInput.checked = stored.collapseCodeBlocks !== false;
+
+	articleModelInput.value = String(stored.articleModel || ArenaShared.DEFAULT_ARTICLE_MODEL);
+	articleTemplateInput.value = String(stored.articleTemplate || ArenaShared.DEFAULT_ARTICLE_TEMPLATE);
 
 	applySettings(
 		stored.codebaseSettings || {

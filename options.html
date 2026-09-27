@@ -37,6 +37,32 @@
             <div id="template-list"></div>
         </section>
 
+        <section id="article" class="chat-templates">
+            <header class="page-header">
+                <div>
+                    <h1>Article</h1>
+                    <p>
+                        The popup's "Explain article" button sends the largest &lt;article&gt; on the page to arena.ai
+                        using this template. Placeholders: <code>{article}</code>, <code>{title}</code>,
+                        <code>{url}</code>.
+                    </p>
+                </div>
+            </header>
+            <div class="card settings-card">
+                <label class="field">
+                    <span>Model for the new chat</span>
+                    <input id="article-model" type="text" placeholder="gemini-3.8-flash-high" spellcheck="false" />
+                </label>
+                <label class="field">
+                    <span>Prompt template</span>
+                    <textarea id="article-template" spellcheck="false"></textarea>
+                </label>
+                <div class="row wrap">
+                    <button id="reset-article-template" type="button">Reset to default</button>
+                </div>
+            </div>
+        </section>
+
         <header class="page-header">
             <div>
                 <h1>Prompts</h1>
@@ -95,6 +121,7 @@
             </div>
         </section>
     </main>
+    <script src="shared.js"></script>
     <script src="chatTemplates.js"></script>
     <script src="codebase.js"></script>
     <script src="options.js"></script>

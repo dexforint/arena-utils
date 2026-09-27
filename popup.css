@@ -257,3 +257,30 @@ section {
 	background: hsl(var(--interactive-negative) / 0.12);
 	color: hsl(var(--interactive-negative));
 }
+
+#article-meta {
+	margin: 6px 0 8px;
+}
+
+#explain-article {
+	width: 100%;
+	padding: 8px 10px;
+	border: 0;
+	border-radius: 8px;
+	background: rgb(var(--surface-raised));
+	color: hsl(var(--interactive-active));
+	font: inherit;
+	font-weight: 650;
+	cursor: pointer;
+	transition: background 0.15s ease;
+}
+
+#explain-article:hover:not(:disabled) {
+	background: rgb(var(--surface-raised));
+	opacity: 0.9;
+}
+
+#explain-article:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}

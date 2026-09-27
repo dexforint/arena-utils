@@ -1039,6 +1039,29 @@ function getComposerTextarea() {
 	return null;
 }
 
+async function waitForSendButton(timeoutMs = 8000) {
+	const startedAt = Date.now();
+
+	while (Date.now() - startedAt < timeoutMs) {
+		const button = document.querySelector(SEND_BUTTON_SELECTOR);
+		if (button && !button.disabled && button.getAttribute("aria-disabled") !== "true") {
+			return button;
+		}
+		await sleep(80);
+	}
+
+	return null;
+}
+
+async function clickSendButton() {
+	const button = await waitForSendButton();
+	if (!button) {
+		throw new Error("Send button did not become enabled in time");
+	}
+
+	button.click();
+}
+
 function setTextareaValue(textarea, value) {
 	const descriptor = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value");
 	const nativeSetter = descriptor && descriptor.set;
@@ -1160,7 +1183,7 @@ function clearPendingPrompt() {
 		/* ignore */
 	}
 
-	void chrome.storage.local.remove(["pendingChatPrompt", "pendingChatUrl"]);
+	void chrome.storage.local.remove(["pendingChatPrompt", "pendingChatUrl", "pendingChatAutoSend", "pendingChatAutoSendUntil"]);
 }
 
 function pendingPromptMatchesPage(pendingUrl) {
@@ -1184,14 +1207,22 @@ async function insertPendingPrompt() {
 	let pending = readPendingPrompt();
 	let text = pending?.text || "";
 	let pendingUrl = pending?.url || "";
+	let autoSend = false;
 
 	if (!text) {
 		const stored = await chrome.storage.local.get({
 			pendingChatPrompt: "",
 			pendingChatUrl: "",
+			pendingChatAutoSend: false,
+			pendingChatAutoSendUntil: 0,
 		});
+
 		text = String(stored.pendingChatPrompt || "");
 		pendingUrl = String(stored.pendingChatUrl || "");
+
+		const until = Number(stored.pendingChatAutoSendUntil || 0);
+		const notExpired = !until || Date.now() < until;
+		autoSend = Boolean(stored.pendingChatAutoSend) && notExpired;
 	}
 
 	if (!text) {
@@ -1216,12 +1247,28 @@ async function insertPendingPrompt() {
 			try {
 				fillComposer(text);
 				await sleep(350);
+
 				const textarea = getComposerTextarea();
 				if (textarea && textarea.value !== text) {
 					fillComposer(text);
 				}
+
 				clearPendingPrompt();
-				showToast("Prompt inserted");
+
+				if (autoSend) {
+					showToast("Article inserted, sending…");
+					await sleep(150);
+
+					try {
+						await clickSendButton();
+						showToast("Article sent to AI");
+					} catch (_sendError) {
+						showToast("Prompt inserted. Click Send manually.");
+					}
+				} else {
+					showToast("Prompt inserted");
+				}
+
 				return;
 			} catch (_error) {
 				await sleep(100);
