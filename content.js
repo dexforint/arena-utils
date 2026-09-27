@@ -13,6 +13,7 @@ let pinnedUntil = 0;
 let boundScroller = null;
 let cachedMessages = [];
 let panelRows = [];
+let cachedBookmarkIds = new Set();
 let chatTemplates = [];
 let pendingPromptInFlight = false;
 
@@ -45,6 +46,21 @@ const prefixListItem =
 			.split("\n")
 			.map((line, index) => (index === 0 ? `${marker}${line}` : line ? `${indent}${line}` : ""))
 			.join("\n"));
+
+const getBookmarks =
+	Shared?.getBookmarks ||
+	(async () => {
+		const stored = await chrome.storage.local.get({ bookmarks: [] });
+		return Array.isArray(stored.bookmarks) ? stored.bookmarks : [];
+	});
+
+const setBookmarks =
+	Shared?.setBookmarks ||
+	(async (bookmarks) => {
+		await chrome.storage.local.set({
+			bookmarks: Array.isArray(bookmarks) ? bookmarks : [],
+		});
+	});
 
 const HOST_ID = "__arena_utils_host__";
 const NEW_CHAT_HOST_ID = "__arena_utils_new_chat_host__";
@@ -117,7 +133,8 @@ const PANEL_SHARED_CSS = `
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	width: 100%;
+	flex: 1;
+	min-width: 0;
 	margin: 0;
 	padding: 8px 10px;
 	border: 0;
@@ -161,6 +178,44 @@ ${PANEL_SHARED_CSS}
 
 .panel {
 	width: 280px;
+}
+
+.panel-head {
+	display: flex;
+	align-items: center;
+}
+
+.bookmark-btn {
+	flex: none;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	margin: 0 6px 0 0;
+	padding: 0;
+	border: 0;
+	border-radius: 6px;
+	background: transparent;
+	color: hsl(var(--text-muted));
+	cursor: pointer;
+	font: inherit;
+	font-size: 15px;
+	line-height: 1;
+	transition: color 0.15s ease, background 0.15s ease;
+}
+
+.bookmark-btn:hover {
+	background: var(--arena-raised);
+	color: hsl(var(--text-primary));
+}
+
+.bookmark-btn[data-active="true"] {
+	color: hsl(var(--interactive-active));
+}
+
+.bookmark-btn[hidden] {
+	display: none;
 }
 
 .count {
@@ -431,6 +486,56 @@ function isExistingChatPage() {
 
 function buildFolderName() {
 	return sanitizeFileName(getConversationIdFromUrl());
+}
+
+const BOOKMARK_TITLE_MAX = 80;
+const PREFERRED_TITLE_SELECTOR = 'button[aria-label*=", model "]';
+
+function truncateTitle(text, max = BOOKMARK_TITLE_MAX) {
+	const value = String(text || "")
+		.replace(/\s+/g, " ")
+		.trim();
+	if (!value) {
+		return "";
+	}
+	if (value.length <= max) {
+		return value;
+	}
+	return `${value.slice(0, max - 1).trimEnd()}…`;
+}
+
+function readArenaTitleFromHeader() {
+	try {
+		const button = document.querySelector(PREFERRED_TITLE_SELECTOR);
+		if (!button) {
+			return "";
+		}
+
+		const label = button.getAttribute("aria-label") || "";
+		const head = label.split(/,\s*model\s/i)[0];
+		return head ? head.trim() : "";
+	} catch (_error) {
+		return "";
+	}
+}
+
+function getChatTitle() {
+	const messages = cachedMessages.length ? cachedMessages : collectMessages();
+	const userEntry = messages.find((entry) => entry.role === "user");
+
+	if (userEntry) {
+		const truncated = truncateTitle(previewFromRoot(userEntry.root));
+		if (truncated) {
+			return truncated;
+		}
+	}
+
+	const fromHeader = truncateTitle(readArenaTitleFromHeader());
+	if (fromHeader) {
+		return fromHeader;
+	}
+
+	return getConversationIdFromUrl();
 }
 
 function showToast(text) {
@@ -1382,6 +1487,67 @@ function getPanelEls() {
 	};
 }
 
+function getBookmarkButton() {
+	const host = document.getElementById(HOST_ID);
+	return host?.shadowRoot?.querySelector(".bookmark-btn") || null;
+}
+
+function updateBookmarkButton() {
+	const button = getBookmarkButton();
+	if (!button) {
+		return;
+	}
+
+	if (!isExistingChatPage()) {
+		button.hidden = true;
+		return;
+	}
+
+	const id = getConversationIdFromUrl();
+	const active = cachedBookmarkIds.has(id);
+
+	button.hidden = false;
+	button.dataset.active = active ? "true" : "false";
+	button.textContent = active ? "★" : "☆";
+	button.title = active ? "Remove bookmark" : "Bookmark this chat";
+	button.setAttribute("aria-pressed", active ? "true" : "false");
+	button.setAttribute("aria-label", active ? "Remove bookmark" : "Bookmark this chat");
+}
+
+async function refreshBookmarkCache() {
+	try {
+		const bookmarks = await getBookmarks();
+		cachedBookmarkIds = new Set(bookmarks.map((item) => item?.id).filter(Boolean));
+	} catch (_error) {
+		cachedBookmarkIds = new Set();
+	}
+
+	updateBookmarkButton();
+}
+
+async function toggleCurrentBookmark() {
+	if (!isExistingChatPage()) {
+		showToast("Open a chat to bookmark it");
+		return;
+	}
+
+	const id = getConversationIdFromUrl();
+	const url = location.href;
+	const title = getChatTitle();
+
+	const bookmarks = await getBookmarks();
+	const exists = bookmarks.some((item) => item?.id === id);
+
+	const next = exists
+		? bookmarks.filter((item) => item?.id !== id)
+		: [{ id, url, title, createdAt: Date.now() }, ...bookmarks.filter((item) => item?.id !== id)];
+
+	await setBookmarks(next);
+	await refreshBookmarkCache();
+
+	showToast(exists ? "Bookmark removed" : `Bookmarked: ${title}`);
+}
+
 function setPanelCollapsed(collapsed, persist = true) {
 	panelCollapsed = Boolean(collapsed);
 	const els = getPanelEls();
@@ -1869,11 +2035,14 @@ function ensurePanel() {
 	shadow.innerHTML = `
 		<style>${PANEL_CSS}</style>
 		<div class="panel" data-collapsed="${panelCollapsed ? "true" : "false"}">
-			<button class="toggle" type="button" title="Toggle message navigation">
-				<span class="title">Messages</span>
-				<span class="count">0</span>
-				<span class="chevron">${panelCollapsed ? "▾" : "▴"}</span>
-			</button>
+			<div class="panel-head">
+				<button class="toggle" type="button" title="Toggle message navigation">
+					<span class="title">Messages</span>
+					<span class="count">0</span>
+					<span class="chevron">${panelCollapsed ? "▾" : "▴"}</span>
+				</button>
+				<button class="bookmark-btn" type="button" hidden aria-pressed="false">☆</button>
+			</div>
 			<div class="body">
 				<div class="nav">
 					<button class="nav-btn" type="button" data-dir="-1" title="Previous message (↑)">↑</button>
@@ -1889,6 +2058,11 @@ function ensurePanel() {
 
 	shadow.querySelector(".toggle").addEventListener("click", () => {
 		setPanelCollapsed(!panelCollapsed);
+	});
+	shadow.querySelector(".bookmark-btn").addEventListener("click", (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+		void toggleCurrentBookmark();
 	});
 	shadow.querySelector('[data-dir="-1"]').addEventListener("click", (event) => {
 		event.preventDefault();
@@ -2072,6 +2246,7 @@ async function init() {
 	setNewChatCollapsed(newChatCollapsed, false);
 	renderPanelList();
 	renderNewChatList();
+	void refreshBookmarkCache();
 	void insertPendingPrompt();
 
 	new MutationObserver(() => {
@@ -2093,6 +2268,7 @@ async function init() {
 	window.addEventListener("resize", () => {
 		scheduleCurrentSync();
 		positionNewChatPanel();
+		updateBookmarkButton();
 	});
 	document.addEventListener("keydown", onKeyDown, true);
 }
@@ -2125,6 +2301,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
 		if (changes.newChatCollapsed.newValue !== newChatCollapsed) {
 			setNewChatCollapsed(changes.newChatCollapsed.newValue, false);
 		}
+	}
+
+	if (changes.bookmarks) {
+		cachedBookmarkIds = new Set((Array.isArray(changes.bookmarks.newValue) ? changes.bookmarks.newValue : []).map((item) => item?.id).filter(Boolean));
+		updateBookmarkButton();
 	}
 });
 

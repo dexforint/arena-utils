@@ -67,9 +67,25 @@
 			.trimEnd()}\n`;
 	}
 
+	const BOOKMARKS_KEY = "bookmarks";
+
+	async function getBookmarks() {
+		const stored = await chrome.storage.local.get({ [BOOKMARKS_KEY]: [] });
+		return Array.isArray(stored[BOOKMARKS_KEY]) ? stored[BOOKMARKS_KEY] : [];
+	}
+
+	async function setBookmarks(bookmarks) {
+		await chrome.storage.local.set({
+			[BOOKMARKS_KEY]: Array.isArray(bookmarks) ? bookmarks : [],
+		});
+	}
+
 	globalThis.ArenaShared = {
 		sanitizeFileName,
 		prefixListItem,
 		normalizeMarkdown,
+		BOOKMARKS_KEY,
+		getBookmarks,
+		setBookmarks,
 	};
 })();

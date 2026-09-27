@@ -8,6 +8,8 @@ const promptsEdit = document.getElementById("prompts-edit");
 const codebaseRoot = document.getElementById("codebase");
 const codebaseMeta = document.getElementById("codebase-meta");
 const statusEl = document.getElementById("status");
+const bookmarksRoot = document.getElementById("bookmarks");
+const bookmarksCount = document.getElementById("bookmarks-count");
 
 function applyTheme(theme) {
 	const mode = theme === "dark" ? "dark" : "light";
@@ -33,6 +35,25 @@ async function sendToTab(tabId, message) {
 			error: error instanceof Error ? error.message : String(error),
 		};
 	}
+}
+
+async function readBookmarks() {
+	if (ArenaShared?.getBookmarks) {
+		return ArenaShared.getBookmarks();
+	}
+
+	const stored = await chrome.storage.local.get({ bookmarks: [] });
+	return Array.isArray(stored.bookmarks) ? stored.bookmarks : [];
+}
+
+async function writeBookmarks(bookmarks) {
+	if (ArenaShared?.setBookmarks) {
+		return ArenaShared.setBookmarks(bookmarks);
+	}
+
+	await chrome.storage.local.set({
+		bookmarks: Array.isArray(bookmarks) ? bookmarks : [],
+	});
 }
 
 function renderButtonList(root, items, tab, emptyText) {
@@ -133,6 +154,71 @@ function renderCodebase(snapshot, tab) {
 	renderButtonList(codebaseRoot, [], tab, "No snapshot yet. Click Select folder…");
 }
 
+function renderBookmarks(bookmarks) {
+	if (!bookmarksRoot) {
+		return;
+	}
+
+	bookmarksRoot.replaceChildren();
+
+	if (!Array.isArray(bookmarks) || bookmarks.length === 0) {
+		const empty = document.createElement("div");
+		empty.className = "empty";
+		empty.textContent = "No bookmarks yet. Open a chat and click ☆.";
+		bookmarksRoot.appendChild(empty);
+		if (bookmarksCount) {
+			bookmarksCount.textContent = "";
+		}
+		return;
+	}
+
+	if (bookmarksCount) {
+		bookmarksCount.textContent = String(bookmarks.length);
+	}
+
+	for (const bookmark of bookmarks) {
+		const row = document.createElement("div");
+		row.className = "bookmark-row";
+
+		const openBtn = document.createElement("button");
+		openBtn.type = "button";
+		openBtn.className = "bookmark-open";
+		openBtn.title = bookmark.url || "";
+		openBtn.setAttribute("aria-label", `Open chat ${bookmark.title || bookmark.id || ""}`);
+
+		const titleEl = document.createElement("span");
+		titleEl.className = "bookmark-title";
+		titleEl.textContent = bookmark.title || bookmark.id || "Untitled";
+		openBtn.appendChild(titleEl);
+
+		openBtn.addEventListener("click", async () => {
+			if (!bookmark.url) {
+				statusEl.textContent = "Bookmark has no URL";
+				return;
+			}
+
+			await chrome.tabs.create({ url: bookmark.url, active: true });
+			window.close();
+		});
+
+		const deleteBtn = document.createElement("button");
+		deleteBtn.type = "button";
+		deleteBtn.className = "bookmark-delete";
+		deleteBtn.title = "Remove bookmark";
+		deleteBtn.setAttribute("aria-label", "Remove bookmark");
+		deleteBtn.textContent = "×";
+
+		deleteBtn.addEventListener("click", async () => {
+			const all = await readBookmarks();
+			const next = all.filter((item) => item?.id !== bookmark.id);
+			await writeBookmarks(next);
+		});
+
+		row.append(openBtn, deleteBtn);
+		bookmarksRoot.appendChild(row);
+	}
+}
+
 async function init() {
 	const tab = await getActiveTab();
 	const stored = await chrome.storage.local.get({
@@ -141,11 +227,13 @@ async function init() {
 		prompts: [],
 		chatTemplates: [],
 		codebaseSnapshot: null,
+		bookmarks: [],
 	});
 
 	autoscroll.checked = Boolean(stored.disableAutoscroll);
 	collapseCode.checked = stored.collapseCodeBlocks !== false;
 	renderCodebase(stored.codebaseSnapshot, tab);
+	renderBookmarks(stored.bookmarks);
 
 	pickFolderButton.addEventListener("click", async () => {
 		await chrome.tabs.create({
@@ -170,6 +258,10 @@ async function init() {
 
 		if (changes.chatTemplates && !isArenaTab(tab)) {
 			renderChatTemplates(changes.chatTemplates.newValue || []);
+		}
+
+		if (changes.bookmarks) {
+			renderBookmarks(changes.bookmarks.newValue || []);
 		}
 	});
 

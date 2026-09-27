@@ -193,3 +193,67 @@ section {
 	font-size: 11px;
 	line-height: 1.35;
 }
+
+.muted {
+	color: hsl(var(--text-muted));
+	font-size: 12px;
+}
+
+.bookmark-row {
+	display: flex;
+	align-items: stretch;
+	gap: 4px;
+}
+
+.bookmark-open {
+	flex: 1;
+	min-width: 0;
+	padding: 8px 10px;
+	border: 1px solid rgb(var(--border));
+	border-radius: 8px;
+	background: transparent;
+	color: hsl(var(--interactive-active));
+	text-align: left;
+	cursor: pointer;
+	font: inherit;
+	transition: background 0.15s ease;
+}
+
+.bookmark-open:hover {
+	background: rgb(var(--surface-raised));
+}
+
+.bookmark-open:focus-visible,
+.bookmark-delete:focus-visible {
+	outline: 2px solid hsl(var(--interactive-link) / 0.45);
+	outline-offset: 2px;
+}
+
+.bookmark-title {
+	display: block;
+	font-size: 13px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.bookmark-delete {
+	flex: none;
+	width: 34px;
+	border: 1px solid rgb(var(--border));
+	border-radius: 8px;
+	background: transparent;
+	color: hsl(var(--text-muted));
+	cursor: pointer;
+	font: inherit;
+	font-size: 14px;
+	line-height: 1;
+	transition:
+		background 0.15s ease,
+		color 0.15s ease;
+}
+
+.bookmark-delete:hover {
+	background: hsl(var(--interactive-negative) / 0.12);
+	color: hsl(var(--interactive-negative));
+}
