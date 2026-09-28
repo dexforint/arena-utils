@@ -13,6 +13,9 @@ const bookmarksCount = document.getElementById("bookmarks-count");
 const articleSection = document.getElementById("article-section");
 const articleMeta = document.getElementById("article-meta");
 const explainArticleButton = document.getElementById("explain-article");
+const videoSection = document.getElementById("video-section");
+const videoMeta = document.getElementById("video-meta");
+const explainVideoButton = document.getElementById("explain-video");
 
 function applyTheme(theme) {
 	const mode = theme === "dark" ? "dark" : "light";
@@ -42,6 +45,35 @@ async function sendToTab(tabId, message) {
 
 function isHttpTab(tab) {
 	return Boolean(tab?.url && /^https?:\/\//i.test(tab.url));
+}
+
+function isYouTubeHost(hostname) {
+	return /(^|\.)youtube\.com$/i.test(hostname) || /(^|\.)youtube-nocookie\.com$/i.test(hostname);
+}
+
+function isYouTubeVideoUrl(url) {
+	try {
+		const parsed = new URL(String(url || ""));
+		if (!isYouTubeHost(parsed.hostname)) {
+			return false;
+		}
+
+		if (parsed.pathname === "/watch" && parsed.searchParams.get("v")) {
+			return true;
+		}
+
+		if (parsed.pathname.startsWith("/shorts/")) {
+			return true;
+		}
+
+		if (parsed.pathname.startsWith("/embed/")) {
+			return true;
+		}
+
+		return false;
+	} catch (_error) {
+		return false;
+	}
 }
 
 function isArenaUrl(url) {
@@ -95,6 +127,68 @@ async function extractArticleFromTab(tabId) {
 	return result?.result || { ok: false, reason: "Empty extraction result" };
 }
 
+async function checkVideoSubtitles(tabId) {
+	try {
+		const [result] = await chrome.scripting.executeScript({
+			target: { tabId },
+			world: "MAIN",
+			func: () => {
+				const app = document.querySelector("ytd-app");
+				const player = document.querySelector("#movie_player");
+
+				let response = app?.data?.playerResponse || null;
+
+				if (!response && typeof player?.getPlayerResponse === "function") {
+					try {
+						response = player.getPlayerResponse();
+					} catch (_error) {
+						/* ignore */
+					}
+				}
+
+				if (!response && globalThis.ytInitialPlayerResponse) {
+					response = globalThis.ytInitialPlayerResponse;
+				}
+
+				const tracks = response?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+				const title = String(response?.videoDetails?.title || document.title || "");
+
+				return {
+					hasCaptions: Array.isArray(tracks) && tracks.length > 0,
+					count: Array.isArray(tracks) ? tracks.length : 0,
+					languages: Array.isArray(tracks) ? Array.from(new Set(tracks.map((track) => String(track.languageCode || "")).filter(Boolean))).slice(0, 6) : [],
+					title,
+				};
+			},
+		});
+
+		return result?.result || { hasCaptions: false, count: 0, languages: [] };
+	} catch (_error) {
+		return { hasCaptions: false, count: 0, languages: [] };
+	}
+}
+
+async function extractVideoFromTab(tabId) {
+	await chrome.scripting.executeScript({
+		target: { tabId },
+		world: "MAIN",
+		files: ["youtubeExtractor.js"],
+	});
+
+	const [result] = await chrome.scripting.executeScript({
+		target: { tabId },
+		world: "MAIN",
+		func: () => {
+			if (typeof globalThis.__arenaExtractYouTube !== "function") {
+				return { ok: false, reason: "Extractor is not available" };
+			}
+			return globalThis.__arenaExtractYouTube();
+		},
+	});
+
+	return result?.result || { ok: false, reason: "Empty extraction result" };
+}
+
 function renderArticlePrompt(template, article) {
 	const source = String(template || "");
 	const text = String(article?.markdown || "");
@@ -109,6 +203,25 @@ function renderArticlePrompt(template, article) {
 
 function buildArticleChatUrl(model) {
 	const id = String(model || "").trim() || ArenaShared.DEFAULT_ARTICLE_MODEL;
+	const url = new URL("https://arena.ai/text/direct");
+	url.searchParams.set("model_a", id);
+	return url.toString();
+}
+
+function renderVideoPrompt(template, video) {
+	const source = String(template || "");
+	const subtitles = String(video?.subtitles || "");
+	const title = String(video?.title || "").trim();
+	const url = String(video?.url || "").trim();
+
+	const hasSlot = source.includes("{subtitles}");
+	const head = source.replaceAll("{title}", title).replaceAll("{url}", url).replaceAll("{subtitles}", subtitles);
+
+	return hasSlot ? head : `${head}\n\n\`\`\`\n${subtitles}\n\`\`\``;
+}
+
+function buildVideoChatUrl(model) {
+	const id = String(model || "").trim() || ArenaShared.DEFAULT_VIDEO_MODEL;
 	const url = new URL("https://arena.ai/text/direct");
 	url.searchParams.set("model_a", id);
 	return url.toString();
@@ -301,7 +414,7 @@ async function renderArticleSection(tab) {
 		return;
 	}
 
-	if (!isHttpTab(tab) || isArenaUrl(tab.url)) {
+	if (!isHttpTab(tab) || isArenaUrl(tab.url) || isYouTubeVideoUrl(tab.url)) {
 		articleSection.hidden = true;
 		return;
 	}
@@ -325,6 +438,37 @@ async function renderArticleSection(tab) {
 	explainArticleButton.dataset.tabId = String(tab.id);
 }
 
+async function renderVideoSection(tab) {
+	if (!videoSection) {
+		return;
+	}
+
+	if (!isYouTubeVideoUrl(tab?.url || "")) {
+		videoSection.hidden = true;
+		return;
+	}
+
+	videoSection.hidden = false;
+	explainVideoButton.disabled = true;
+	videoMeta.textContent = "Checking video…";
+
+	const info = await checkVideoSubtitles(tab.id);
+
+	if (!info?.hasCaptions) {
+		videoMeta.textContent = "No subtitles available for this video";
+		explainVideoButton.disabled = true;
+		explainVideoButton.removeAttribute("data-tab-id");
+		return;
+	}
+
+	const languages = Array.isArray(info.languages) && info.languages.length > 0 ? ` · ${info.languages.join(", ")}` : "";
+	const count = Number(info.count) || 0;
+
+	videoMeta.textContent = `${count} subtitle track${count === 1 ? "" : "s"}${languages}`;
+	explainVideoButton.disabled = false;
+	explainVideoButton.dataset.tabId = String(tab.id);
+}
+
 async function init() {
 	const tab = await getActiveTab();
 	const stored = await chrome.storage.local.get({
@@ -341,6 +485,7 @@ async function init() {
 	renderCodebase(stored.codebaseSnapshot, tab);
 	renderBookmarks(stored.bookmarks);
 	void renderArticleSection(tab);
+	void renderVideoSection(tab);
 
 	pickFolderButton.addEventListener("click", async () => {
 		await chrome.tabs.create({
@@ -452,6 +597,56 @@ if (explainArticleButton) {
 		} catch (error) {
 			articleMeta.textContent = error instanceof Error ? error.message : String(error);
 			explainArticleButton.disabled = false;
+		}
+	});
+}
+
+if (explainVideoButton) {
+	explainVideoButton.addEventListener("click", async () => {
+		const tabId = Number(explainVideoButton.dataset.tabId || 0);
+		if (!tabId) {
+			videoMeta.textContent = "No target tab";
+			return;
+		}
+
+		explainVideoButton.disabled = true;
+		videoMeta.textContent = "Extracting subtitles…";
+
+		try {
+			const extracted = await extractVideoFromTab(tabId);
+			if (!extracted?.ok) {
+				const dbg = Array.isArray(extracted?.debug) ? ` | steps: ${extracted.debug.join("; ")}` : "";
+				throw new Error((extracted?.reason || "Failed to extract subtitles") + dbg);
+			}
+
+			const stored = await chrome.storage.local.get({
+				videoTemplate: ArenaShared.DEFAULT_VIDEO_TEMPLATE,
+				videoModel: ArenaShared.DEFAULT_VIDEO_MODEL,
+			});
+
+			const template = String(stored.videoTemplate || ArenaShared.DEFAULT_VIDEO_TEMPLATE);
+			const model = String(stored.videoModel || ArenaShared.DEFAULT_VIDEO_MODEL).trim();
+
+			const prompt = renderVideoPrompt(template, extracted);
+			const url = buildVideoChatUrl(model);
+
+			await chrome.storage.local.set({
+				pendingChatPrompt: prompt,
+				pendingChatUrl: url,
+				pendingChatAutoSend: true,
+				pendingChatAutoSendUntil: Date.now() + 5 * 60 * 1000,
+			});
+
+			await chrome.tabs.create({ url, active: true });
+			window.close();
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			videoMeta.textContent = message;
+			explainVideoButton.disabled = false;
+
+			// Если сообщение пришло от нового экстрактора — оно уже содержит детали,
+			// но на всякий случай пишем в консоль весь debug-массив.
+			console.warn("[arena-utils] YouTube extraction failed:", error);
 		}
 	});
 }

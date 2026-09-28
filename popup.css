@@ -284,3 +284,29 @@ section {
 	opacity: 0.5;
 	cursor: not-allowed;
 }
+
+#video-meta {
+	margin: 6px 0 8px;
+}
+
+#explain-video {
+	width: 100%;
+	padding: 8px 10px;
+	border: 0;
+	border-radius: 8px;
+	background: rgb(var(--surface-raised));
+	color: hsl(var(--interactive-active));
+	font: inherit;
+	font-weight: 650;
+	cursor: pointer;
+	transition: background 0.15s ease;
+}
+
+#explain-video:hover:not(:disabled) {
+	opacity: 0.9;
+}
+
+#explain-video:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}

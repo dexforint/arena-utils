@@ -63,6 +63,32 @@
             </div>
         </section>
 
+        <section id="video" class="chat-templates">
+            <header class="page-header">
+                <div>
+                    <h1>Video</h1>
+                    <p>
+                        The popup's "Explain video" button sends YouTube subtitles to arena.ai using this template.
+                        Placeholders: <code>{subtitles}</code>, <code>{title}</code>, <code>{url}</code>.
+                        Subtitles come with timestamps like <code>[05:23]</code>.
+                    </p>
+                </div>
+            </header>
+            <div class="card settings-card">
+                <label class="field">
+                    <span>Model for the new chat</span>
+                    <input id="video-model" type="text" placeholder="gemini-3.8-flash-high" spellcheck="false" />
+                </label>
+                <label class="field">
+                    <span>Prompt template</span>
+                    <textarea id="video-template" spellcheck="false"></textarea>
+                </label>
+                <div class="row wrap">
+                    <button id="reset-video-template" type="button">Reset to default</button>
+                </div>
+            </div>
+        </section>
+
         <header class="page-header">
             <div>
                 <h1>Prompts</h1>

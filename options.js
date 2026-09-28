@@ -17,6 +17,9 @@ const restoreAccessButton = document.getElementById("restore-access");
 const articleModelInput = document.getElementById("article-model");
 const articleTemplateInput = document.getElementById("article-template");
 const resetArticleTemplateButton = document.getElementById("reset-article-template");
+const videoModelInput = document.getElementById("video-model");
+const videoTemplateInput = document.getElementById("video-template");
+const resetVideoTemplateButton = document.getElementById("reset-video-template");
 
 const IDB_NAME = "arena-utils";
 const IDB_STORE = "handles";
@@ -24,6 +27,7 @@ const IDB_STORE = "handles";
 let saveTimer = 0;
 let templateSaveTimer = 0;
 let articleSaveTimer = 0;
+let videoSaveTimer = 0;
 let prompts = [];
 let chatTemplates = [];
 let dirHandle = null;
@@ -61,6 +65,19 @@ function scheduleArticleSave() {
 		void chrome.storage.local.set({
 			articleModel: model,
 			articleTemplate: template,
+		});
+	}, 300);
+}
+
+function scheduleVideoSave() {
+	window.clearTimeout(videoSaveTimer);
+	videoSaveTimer = window.setTimeout(() => {
+		const model = String(videoModelInput.value || "").trim() || ArenaShared.DEFAULT_VIDEO_MODEL;
+		const template = String(videoTemplateInput.value || "");
+
+		void chrome.storage.local.set({
+			videoModel: model,
+			videoTemplate: template,
 		});
 	}, 300);
 }
@@ -537,6 +554,15 @@ resetArticleTemplateButton.addEventListener("click", () => {
 	scheduleArticleSave();
 });
 
+videoModelInput.addEventListener("input", scheduleVideoSave);
+videoTemplateInput.addEventListener("input", scheduleVideoSave);
+
+resetVideoTemplateButton.addEventListener("click", () => {
+	videoModelInput.value = ArenaShared.DEFAULT_VIDEO_MODEL;
+	videoTemplateInput.value = ArenaShared.DEFAULT_VIDEO_TEMPLATE;
+	scheduleVideoSave();
+});
+
 async function init() {
 	applyOptionsTheme();
 	window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyOptionsTheme);
@@ -549,6 +575,8 @@ async function init() {
 		codebaseSnapshot: null,
 		articleModel: ArenaShared.DEFAULT_ARTICLE_MODEL,
 		articleTemplate: ArenaShared.DEFAULT_ARTICLE_TEMPLATE,
+		videoModel: ArenaShared.DEFAULT_VIDEO_MODEL,
+		videoTemplate: ArenaShared.DEFAULT_VIDEO_TEMPLATE,
 	});
 
 	prompts = Array.isArray(stored.prompts) ? stored.prompts : [];
@@ -560,6 +588,8 @@ async function init() {
 
 	articleModelInput.value = String(stored.articleModel || ArenaShared.DEFAULT_ARTICLE_MODEL);
 	articleTemplateInput.value = String(stored.articleTemplate || ArenaShared.DEFAULT_ARTICLE_TEMPLATE);
+	videoModelInput.value = String(stored.videoModel || ArenaShared.DEFAULT_VIDEO_MODEL);
+	videoTemplateInput.value = String(stored.videoTemplate || ArenaShared.DEFAULT_VIDEO_TEMPLATE);
 
 	applySettings(
 		stored.codebaseSettings || {

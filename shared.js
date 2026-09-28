@@ -82,6 +82,15 @@
 
 	const DEFAULT_ARTICLE_MODEL = "gemini-3.8-flash-high";
 
+	const DEFAULT_VIDEO_MODEL = "gemini-3.8-flash-high";
+
+	const DEFAULT_VIDEO_TEMPLATE = [
+		"Понятно объясни видео со следующими субтитрами. Не упусти важные и интересные детали. Если считаешь нужным, то дай свой комментарии как специалист в данной области.",
+		"```",
+		"{subtitles}",
+		"```",
+	].join("\n");
+
 	const DEFAULT_ARTICLE_TEMPLATE = [
 		"Понятно объясни следующую статью. Не упусти важные и интересные детали. Если считаешь нужным, то ты можешь дать свои комментарии к статье как специалист в данной теме.",
 		"````markdown",
@@ -98,5 +107,7 @@
 		setBookmarks,
 		DEFAULT_ARTICLE_MODEL,
 		DEFAULT_ARTICLE_TEMPLATE,
+		DEFAULT_VIDEO_MODEL,
+		DEFAULT_VIDEO_TEMPLATE,
 	};
 })();
