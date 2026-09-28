@@ -2351,12 +2351,26 @@ function positionPromptsPanel() {
 		return;
 	}
 
-	const newChatPanel = document.querySelector(`#${NEW_CHAT_HOST_ID}`)?.shadowRoot?.querySelector(".panel");
+	// Вычисляем горизонтальный отступ точно так же, как для New chat,
+	// чтобы обе панели выстраивались строго по одной вертикальной оси.
+	const target = document.querySelector(PORTAL_TARGET_SELECTOR);
+	const leftVal = target ? `${Math.max(8, Math.round(target.getBoundingClientRect().left + 12))}px` : "12px";
 
-	const top = newChatPanel ? newChatPanel.getBoundingClientRect().bottom + 10 : 56;
+	const newChatHost = document.getElementById(NEW_CHAT_HOST_ID);
+	const newChatPanel = newChatHost?.shadowRoot?.querySelector(".panel");
+
+	let top = 56;
+	if (newChatHost && newChatPanel) {
+		const rect = newChatPanel.getBoundingClientRect();
+		// Если панель New chat отрендерена и имеет высоту,
+		// позиционируем Prompts ровно под её нижней границей.
+		if (rect.height > 0) {
+			top = rect.bottom + 10;
+		}
+	}
 
 	host.style.top = `${Math.max(8, Math.round(top))}px`;
-	host.style.left = "12px";
+	host.style.left = leftVal;
 }
 
 function setPromptsCollapsed(collapsed, persist = true) {
