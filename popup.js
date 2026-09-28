@@ -2,9 +2,10 @@ const autoscroll = document.getElementById("autoscroll");
 const collapseCode = document.getElementById("collapse-code");
 const exportButton = document.getElementById("export");
 const pickFolderButton = document.getElementById("pick-folder");
-const promptsRoot = document.getElementById("prompts");
-const promptsTitle = document.getElementById("prompts-title");
-const promptsEdit = document.getElementById("prompts-edit");
+const newChatSection = document.getElementById("new-chat-section");
+const newChatTitle = document.getElementById("new-chat-title");
+const newChatEdit = document.getElementById("new-chat-edit");
+const newChatTemplates = document.getElementById("new-chat-templates");
 const codebaseRoot = document.getElementById("codebase");
 const codebaseMeta = document.getElementById("codebase-meta");
 const statusEl = document.getElementById("status");
@@ -298,15 +299,16 @@ async function openChatTemplate(template) {
 }
 
 function renderChatTemplates(templates) {
-	promptsTitle.textContent = "New chat";
-	promptsEdit.href = "options.html#chat-templates";
-	promptsRoot.replaceChildren();
+	newChatSection.hidden = false;
+	newChatTitle.textContent = "New chat";
+	newChatEdit.href = "options.html#chat-templates";
+	newChatTemplates.replaceChildren();
 
 	if (!Array.isArray(templates) || templates.length === 0) {
 		const empty = document.createElement("div");
 		empty.className = "empty";
 		empty.textContent = "No templates yet. Open Edit to add some.";
-		promptsRoot.appendChild(empty);
+		newChatTemplates.appendChild(empty);
 		return;
 	}
 
@@ -321,7 +323,7 @@ function renderChatTemplates(templates) {
 		button.addEventListener("click", () => {
 			void openChatTemplate(template);
 		});
-		promptsRoot.appendChild(button);
+		newChatTemplates.appendChild(button);
 	}
 }
 
@@ -504,10 +506,6 @@ async function init() {
 			renderCodebase(changes.codebaseSnapshot.newValue, tab);
 		}
 
-		if (changes.prompts && isArenaTab(tab)) {
-			renderButtonList(promptsRoot, changes.prompts.newValue || [], tab, "No prompts yet. Open Edit to add some.");
-		}
-
 		if (changes.chatTemplates && !isArenaTab(tab)) {
 			renderChatTemplates(changes.chatTemplates.newValue || []);
 		}
@@ -536,8 +534,6 @@ async function init() {
 		renderChatTemplates(stored.chatTemplates);
 		return;
 	}
-
-	renderButtonList(promptsRoot, stored.prompts, tab, "No prompts yet. Open Edit to add some.");
 
 	const status = await sendToTab(tab.id, { type: "ARENA_GET_STATUS" });
 	applyTheme(status?.theme === "dark" ? "dark" : "light");

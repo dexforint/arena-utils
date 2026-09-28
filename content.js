@@ -3,6 +3,8 @@ let requestCounter = 0;
 let panelCollapsed = true;
 let newChatCollapsed = true;
 let newChatCollapsedOverride = false;
+let promptsCollapsed = true;
+let prompts = [];
 let collapseCodeBlocks = true;
 let highlightTimer = 0;
 let refreshTimer = 0;
@@ -64,6 +66,7 @@ const setBookmarks =
 
 const HOST_ID = "__arena_utils_host__";
 const NEW_CHAT_HOST_ID = "__arena_utils_new_chat_host__";
+const PROMPTS_HOST_ID = "__arena_utils_prompts_host__";
 const PAGE_STYLE_ID = "__arena_utils_page_style__";
 const AUTOSCROLL_KEY = "__arena_utils_disable_autoscroll";
 const ALLOW_SCROLL_KEY = "__arena_utils_allow_scroll";
@@ -394,6 +397,84 @@ ${PANEL_SHARED_CSS}
 	font-size: 10px;
 	line-height: 1.35;
 	color: hsl(var(--text-muted));
+}
+
+.edit {
+	display: block;
+	width: 100%;
+	margin: 0;
+	padding: 2px 10px 10px;
+	border: 0;
+	background: transparent;
+	color: hsl(var(--text-muted));
+	cursor: pointer;
+	font: inherit;
+	font-size: 10px;
+	text-align: left;
+}
+
+.edit:hover {
+	color: hsl(var(--text-secondary));
+}
+`;
+
+const PROMPTS_CSS = `
+${PANEL_SHARED_CSS}
+
+.panel {
+	width: 280px;
+}
+
+.chevron {
+	margin-left: auto;
+}
+
+.prompts-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 8px;
+}
+
+.empty {
+	padding: 12px 10px 8px;
+	color: hsl(var(--text-muted));
+	font-size: 12px;
+	line-height: 1.4;
+}
+
+.prompt-item {
+	width: 100%;
+	padding: 8px 10px;
+	border: 1px solid var(--arena-border-faint);
+	border-radius: 8px;
+	background: transparent;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+	font: inherit;
+}
+
+.prompt-item:hover {
+	background: var(--arena-raised);
+}
+
+.prompt-item-name {
+	display: block;
+	font-size: 12px;
+	font-weight: 650;
+	color: hsl(var(--text-primary));
+}
+
+.prompt-item-preview {
+	display: block;
+	margin-top: 2px;
+	font-size: 10px;
+	line-height: 1.35;
+	color: hsl(var(--text-muted));
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .edit {
@@ -1384,6 +1465,7 @@ function applyThemeToHost(host) {
 function applyPageTheme() {
 	applyThemeToHost(document.getElementById(HOST_ID));
 	applyThemeToHost(document.getElementById(NEW_CHAT_HOST_ID));
+	applyThemeToHost(document.getElementById(PROMPTS_HOST_ID));
 }
 
 function getCodeHeader(block) {
@@ -1602,6 +1684,8 @@ function setPanelCollapsed(collapsed, persist = true) {
 		els.panel.dataset.collapsed = panelCollapsed ? "true" : "false";
 		els.chevron.textContent = panelCollapsed ? "▾" : "▴";
 	}
+
+	positionPromptsPanel();
 
 	if (!panelCollapsed) {
 		updateActiveItem({ follow: true });
@@ -2169,6 +2253,8 @@ function setNewChatCollapsed(collapsed, persist = false) {
 		els.chevron.textContent = newChatCollapsed ? "▾" : "▴";
 	}
 
+	positionPromptsPanel();
+
 	if (persist) {
 		newChatCollapsedOverride = true;
 		void chrome.storage.local.set({ newChatCollapsed });
@@ -2245,6 +2331,130 @@ function ensureNewChatPanel() {
 	applyPageTheme();
 }
 
+function getPromptsPanelEls() {
+	const host = document.getElementById(PROMPTS_HOST_ID);
+	if (!host?.shadowRoot) {
+		return null;
+	}
+
+	return {
+		host,
+		panel: host.shadowRoot.querySelector(".panel"),
+		list: host.shadowRoot.querySelector(".prompts-list"),
+		chevron: host.shadowRoot.querySelector(".chevron"),
+	};
+}
+
+function positionPromptsPanel() {
+	const host = document.getElementById(PROMPTS_HOST_ID);
+	if (!host) {
+		return;
+	}
+
+	const newChatPanel = document.querySelector(`#${NEW_CHAT_HOST_ID}`)?.shadowRoot?.querySelector(".panel");
+
+	const top = newChatPanel ? newChatPanel.getBoundingClientRect().bottom + 10 : 56;
+
+	host.style.top = `${Math.max(8, Math.round(top))}px`;
+	host.style.left = "12px";
+}
+
+function setPromptsCollapsed(collapsed, persist = true) {
+	promptsCollapsed = Boolean(collapsed);
+	const els = getPromptsPanelEls();
+	if (els?.panel) {
+		els.panel.dataset.collapsed = promptsCollapsed ? "true" : "false";
+		els.chevron.textContent = promptsCollapsed ? "▾" : "▴";
+	}
+
+	if (persist) {
+		void chrome.storage.local.set({ promptsCollapsed });
+	}
+}
+
+function renderPromptsList() {
+	const els = getPromptsPanelEls();
+	if (!els) {
+		return;
+	}
+
+	els.list.replaceChildren();
+
+	if (!Array.isArray(prompts) || prompts.length === 0) {
+		const empty = document.createElement("div");
+		empty.className = "empty";
+		empty.textContent = "No prompts yet. Add them in Options.";
+		els.list.appendChild(empty);
+		return;
+	}
+
+	for (const prompt of prompts) {
+		const name = String(prompt?.name || "").trim() || "Untitled";
+		const preview = String(prompt?.text || "")
+			.replace(/\s+/g, " ")
+			.trim();
+
+		const button = document.createElement("button");
+		button.type = "button";
+		button.className = "prompt-item";
+		button.innerHTML = `<span class="prompt-item-name"></span><span class="prompt-item-preview"></span>`;
+		button.querySelector(".prompt-item-name").textContent = name;
+		button.querySelector(".prompt-item-preview").textContent = preview;
+		button.title = preview || name;
+
+		button.addEventListener("click", () => {
+			try {
+				insertPrompt(String(prompt?.text || ""));
+			} catch (error) {
+				showToast(`Error: ${error instanceof Error ? error.message : String(error)}`);
+			}
+		});
+
+		els.list.appendChild(button);
+	}
+}
+
+function ensurePromptsPanel() {
+	if (document.getElementById(PROMPTS_HOST_ID)) {
+		positionPromptsPanel();
+		return;
+	}
+
+	const host = document.createElement("div");
+	host.id = PROMPTS_HOST_ID;
+	host.style.cssText = "position:fixed;top:12px;left:12px;z-index:2147483646;";
+
+	const shadow = host.attachShadow({ mode: "open" });
+	shadow.innerHTML = `
+		<style>${PROMPTS_CSS}</style>
+		<div class="panel" data-collapsed="${promptsCollapsed ? "true" : "false"}">
+			<button class="toggle" type="button" title="Toggle prompt snippets">
+				<span class="title">Prompts</span>
+				<span class="chevron">${promptsCollapsed ? "▾" : "▴"}</span>
+			</button>
+			<div class="body">
+				<div class="prompts-list"></div>
+				<button class="edit" type="button">Edit prompts</button>
+			</div>
+		</div>
+	`;
+
+	shadow.querySelector(".toggle").addEventListener("click", () => {
+		setPromptsCollapsed(!promptsCollapsed);
+	});
+	shadow.querySelector(".edit").addEventListener("click", () => {
+		void chrome.runtime.sendMessage({
+			type: "ARENA_OPEN_OPTIONS",
+			hash: "#prompts",
+		});
+	});
+
+	document.documentElement.appendChild(host);
+	renderPromptsList();
+	positionPromptsPanel();
+	applyPageTheme();
+}
+
 function scheduleRefresh() {
 	window.clearTimeout(refreshTimer);
 	refreshTimer = window.setTimeout(() => {
@@ -2262,9 +2472,11 @@ function scheduleRefresh() {
 		restoreNativeScrollbars();
 		ensurePanel();
 		ensureNewChatPanel();
+		ensurePromptsPanel();
 		applyPageTheme();
 		renderPanelList();
 		positionNewChatPanel();
+		positionPromptsPanel();
 	}, 200);
 }
 
@@ -2276,24 +2488,30 @@ async function init() {
 		disableAutoscroll: false,
 		panelCollapsed: true,
 		newChatCollapsed: null,
+		promptsCollapsed: true,
 		collapseCodeBlocks: true,
 		chatTemplates: [],
+		prompts: [],
 	});
 
 	panelCollapsed = Boolean(stored.panelCollapsed);
 	collapseCodeBlocks = stored.collapseCodeBlocks !== false;
 	chatTemplates = Array.isArray(stored.chatTemplates) ? stored.chatTemplates : [];
+	prompts = Array.isArray(stored.prompts) ? stored.prompts : [];
+	promptsCollapsed = stored.promptsCollapsed !== false;
 	newChatCollapsedOverride = typeof stored.newChatCollapsed === "boolean";
 	newChatCollapsed = newChatCollapsedOverride ? stored.newChatCollapsed : isExistingChatPage();
 
 	writeAutoscrollFlag(Boolean(stored.disableAutoscroll));
 	ensurePanel();
 	ensureNewChatPanel();
+	ensurePromptsPanel();
 	setPanelCollapsed(panelCollapsed, false);
 	setNewChatCollapsed(newChatCollapsed, false);
+	setPromptsCollapsed(promptsCollapsed, false);
 	renderPanelList();
 	renderNewChatList();
-	void refreshBookmarkCache();
+	renderPromptsList();
 	void insertPendingPrompt();
 
 	new MutationObserver(() => {
@@ -2348,6 +2566,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
 		if (changes.newChatCollapsed.newValue !== newChatCollapsed) {
 			setNewChatCollapsed(changes.newChatCollapsed.newValue, false);
 		}
+	}
+
+	if (changes.prompts) {
+		prompts = Array.isArray(changes.prompts.newValue) ? changes.prompts.newValue : [];
+		renderPromptsList();
+	}
+
+	if (changes.promptsCollapsed && typeof changes.promptsCollapsed.newValue === "boolean") {
+		promptsCollapsed = changes.promptsCollapsed.newValue;
+		setPromptsCollapsed(promptsCollapsed, false);
 	}
 
 	if (changes.bookmarks) {

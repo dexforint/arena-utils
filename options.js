@@ -626,6 +626,9 @@ async function init() {
 	if (location.hash === "#chat-templates") {
 		document.getElementById("chat-templates")?.scrollIntoView();
 	}
+	if (location.hash === "#prompts") {
+		document.getElementById("prompts")?.scrollIntoView();
+	}
 }
 
 void init();
