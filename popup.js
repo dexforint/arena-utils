@@ -17,6 +17,9 @@ const explainArticleButton = document.getElementById("explain-article");
 const videoSection = document.getElementById("video-section");
 const videoMeta = document.getElementById("video-meta");
 const explainVideoButton = document.getElementById("explain-video");
+const perfDebugInput = document.getElementById("perf-debug");
+const perfDumpButton = document.getElementById("perf-dump");
+const perfResetButton = document.getElementById("perf-reset");
 
 function applyTheme(theme) {
 	const mode = theme === "dark" ? "dark" : "light";
@@ -480,9 +483,11 @@ async function init() {
 		chatTemplates: [],
 		codebaseSnapshot: null,
 		bookmarks: [],
+		perfDebug: false,
 	});
 
 	autoscroll.checked = Boolean(stored.disableAutoscroll);
+	perfDebugInput.checked = Boolean(stored.perfDebug);
 	collapseCode.checked = stored.collapseCodeBlocks !== false;
 	renderCodebase(stored.codebaseSnapshot, tab);
 	renderBookmarks(stored.bookmarks);
@@ -519,6 +524,36 @@ async function init() {
 		await chrome.storage.local.set({
 			disableAutoscroll: autoscroll.checked,
 		});
+	});
+
+	perfDebugInput.addEventListener("change", async () => {
+		await chrome.storage.local.set({ perfDebug: perfDebugInput.checked });
+		statusEl.textContent = perfDebugInput.checked ? "Profiling enabled. Reload the arena.ai tab." : "Profiling disabled.";
+	});
+
+	perfDumpButton.addEventListener("click", async () => {
+		if (!isArenaTab(tab)) {
+			statusEl.textContent = "Open an arena.ai tab first";
+			return;
+		}
+
+		const result = await sendToTab(tab.id, { type: "ARENA_PERF_DUMP" });
+		if (!result?.ok) {
+			statusEl.textContent = result?.error || "Failed to dump report";
+			return;
+		}
+
+		statusEl.textContent = `Dumped ${result.rows?.length || 0} entries to page console (F12)`;
+	});
+
+	perfResetButton.addEventListener("click", async () => {
+		if (!isArenaTab(tab)) {
+			statusEl.textContent = "Open an arena.ai tab first";
+			return;
+		}
+
+		await sendToTab(tab.id, { type: "ARENA_PERF_RESET" });
+		statusEl.textContent = "Profiling counters reset";
 	});
 
 	collapseCode.addEventListener("change", async () => {

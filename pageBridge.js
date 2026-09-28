@@ -5,20 +5,21 @@
 
 	window.__arenaExportPageBridgeInstalled = true;
 
-	const AUTOSCROLL_KEY = "__arena_utils_disable_autoscroll";
-	const ALLOW_SCROLL_KEY = "__arena_utils_allow_scroll";
 	const CHAT_LIST_SELECTOR = "ol.flex-col-reverse, ol.mt-8";
 
 	function isAutoscrollDisabled() {
-		try {
-			if (sessionStorage.getItem(ALLOW_SCROLL_KEY) === "1") {
-				return false;
-			}
-
-			return sessionStorage.getItem(AUTOSCROLL_KEY) === "1";
-		} catch (_error) {
+		const root = document.documentElement;
+		if (!root) {
 			return false;
 		}
+
+		// Читаем атрибуты — они дешевле sessionStorage и не блокируют
+		// hot path (scrollTop, scrollIntoView и т.д.).
+		if (root.dataset.arenaUtilsAllowScroll === "1") {
+			return false;
+		}
+
+		return root.dataset.arenaUtilsNoAutoscroll === "1";
 	}
 
 	function isFormField(el) {

@@ -67,6 +67,21 @@
         <div id="codebase" class="prompts"></div>
     </section>
 
+
+    <section id="debug-section">
+        <div class="row">
+            <h2>Debug</h2>
+        </div>
+        <label class="check">
+            <input id="perf-debug" type="checkbox" />
+            <span>Enable performance profiling</span>
+        </label>
+        <div class="row" style="margin-top: 8px; gap: 6px;">
+            <button id="perf-dump" type="button" style="flex: 1;">Dump report</button>
+            <button id="perf-reset" type="button" style="flex: 1;">Reset</button>
+        </div>
+    </section>
+
     <script src="shared.js"></script>
     <script src="chatTemplates.js"></script>
     <script src="popup.js"></script>

@@ -4,7 +4,6 @@ let panelCollapsed = true;
 let newChatCollapsed = true;
 let newChatCollapsedOverride = false;
 let promptsCollapsed = true;
-let prompts = [];
 let collapseCodeBlocks = true;
 let highlightTimer = 0;
 let refreshTimer = 0;
@@ -15,9 +14,11 @@ let pinnedUntil = 0;
 let boundScroller = null;
 let cachedMessages = [];
 let panelRows = [];
-let cachedBookmarkIds = new Set();
 let chatTemplates = [];
+let prompts = [];
 let pendingPromptInFlight = false;
+let cachedBookmarkIds = new Set();
+let lastCurrentIndexScan = { count: -1, at: 0 };
 
 const pendingRequests = new Map();
 
@@ -75,6 +76,7 @@ const EXPORT_ATTR = "data-arena-export-id";
 const MESSAGE_SCROLL_OFFSET = 16;
 const READING_LINE_OFFSET = 48;
 const PREVIEW_CACHE_TTL_MS = 1500;
+const BOOKMARK_TITLE_MAX = 80;
 const CODE_TOGGLE_CLASS = "__arena-utils-code-toggle";
 const CODE_COLLAPSED_CLASS = "__arena-utils-code-collapsed";
 const HIGHLIGHT_CLASS = "__arena-utils-highlight";
@@ -86,6 +88,7 @@ const CODE_BLOCK_SELECTOR = "[data-code-block='true']";
 const COMPOSER_SELECTORS = ['textarea[name="message"]', 'form textarea[name="message"]', "form textarea", 'textarea[placeholder*="Ask"]'];
 const PORTAL_TARGET_SELECTOR = "#root-portal-target";
 const SEND_BUTTON_SELECTOR = 'button[aria-label="Send message"]';
+const PREFERRED_TITLE_SELECTOR = 'button[aria-label*=", model "]';
 
 // Иконка Copy на arena.ai — узнаём по этим путям SVG.
 const COPY_ICON_PATH_MARKERS = ["M19.4 20H9.6", "M15 9V4.6"];
@@ -549,6 +552,30 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 			theme: getPageTheme(),
 		});
 	}
+
+	if (message?.type === "ARENA_PERF_DUMP") {
+		try {
+			const perf = globalThis.ArenaPerf;
+			if (!perf) {
+				sendResponse({ ok: false, error: "ArenaPerf is not loaded" });
+				return;
+			}
+			const result = perf.report();
+			sendResponse({ ok: true, rows: result.rows, stats: result.stats });
+		} catch (error) {
+			sendResponse({
+				ok: false,
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
+		return;
+	}
+
+	if (message?.type === "ARENA_PERF_RESET") {
+		globalThis.ArenaPerf?.reset();
+		sendResponse({ ok: true });
+		return;
+	}
 });
 
 function getConversationIdFromUrl() {
@@ -567,56 +594,6 @@ function isExistingChatPage() {
 
 function buildFolderName() {
 	return sanitizeFileName(getConversationIdFromUrl());
-}
-
-const BOOKMARK_TITLE_MAX = 80;
-const PREFERRED_TITLE_SELECTOR = 'button[aria-label*=", model "]';
-
-function truncateTitle(text, max = BOOKMARK_TITLE_MAX) {
-	const value = String(text || "")
-		.replace(/\s+/g, " ")
-		.trim();
-	if (!value) {
-		return "";
-	}
-	if (value.length <= max) {
-		return value;
-	}
-	return `${value.slice(0, max - 1).trimEnd()}…`;
-}
-
-function readArenaTitleFromHeader() {
-	try {
-		const button = document.querySelector(PREFERRED_TITLE_SELECTOR);
-		if (!button) {
-			return "";
-		}
-
-		const label = button.getAttribute("aria-label") || "";
-		const head = label.split(/,\s*model\s/i)[0];
-		return head ? head.trim() : "";
-	} catch (_error) {
-		return "";
-	}
-}
-
-function getChatTitle() {
-	const messages = cachedMessages.length ? cachedMessages : collectMessages();
-	const userEntry = messages.find((entry) => entry.role === "user");
-
-	if (userEntry) {
-		const truncated = truncateTitle(previewFromRoot(userEntry.root));
-		if (truncated) {
-			return truncated;
-		}
-	}
-
-	const fromHeader = truncateTitle(readArenaTitleFromHeader());
-	if (fromHeader) {
-		return fromHeader;
-	}
-
-	return getConversationIdFromUrl();
 }
 
 function showToast(text) {
@@ -656,6 +633,61 @@ function showToast(text) {
 }
 
 showToast._timer = 0;
+
+// ---------------------------------------------------------------------------
+// Bookmarks
+// ---------------------------------------------------------------------------
+
+function truncateTitle(text, max = BOOKMARK_TITLE_MAX) {
+	const value = String(text || "")
+		.replace(/\s+/g, " ")
+		.trim();
+	if (!value) {
+		return "";
+	}
+	if (value.length <= max) {
+		return value;
+	}
+	return `${value.slice(0, max - 1).trimEnd()}…`;
+}
+
+function readArenaTitleFromHeader() {
+	try {
+		const button = document.querySelector(PREFERRED_TITLE_SELECTOR);
+		if (!button) {
+			return "";
+		}
+
+		const label = button.getAttribute("aria-label") || "";
+		const head = label.split(/,\s*model\s/i)[0];
+		return head ? head.trim() : "";
+	} catch (_error) {
+		return "";
+	}
+}
+
+function getChatTitle() {
+	const messages = cachedMessages.length ? cachedMessages : collectMessages();
+	const userEntry = messages.find((entry) => entry.role === "user");
+
+	if (userEntry) {
+		const truncated = truncateTitle(previewFromRoot(userEntry.root, { accurate: true }));
+		if (truncated) {
+			return truncated;
+		}
+	}
+
+	const fromHeader = truncateTitle(readArenaTitleFromHeader());
+	if (fromHeader) {
+		return fromHeader;
+	}
+
+	return getConversationIdFromUrl();
+}
+
+// ---------------------------------------------------------------------------
+// Message collection
+// ---------------------------------------------------------------------------
 
 function hasCopyIcon(button) {
 	const paths = Array.from(button.querySelectorAll("svg path")).map((node) => node.getAttribute("d") || "");
@@ -838,6 +870,10 @@ function collectMessages() {
 	return fromList.length > 0 ? fromList : collectMessagesFromCopyButtons();
 }
 
+// ---------------------------------------------------------------------------
+// DOM → Markdown
+// ---------------------------------------------------------------------------
+
 function languageFromClassName(value) {
 	const text = String(value || "");
 	const match = text.match(/language-([\w#+-]+)/i) || text.match(/lang(?:uage)?-([\w#+-]+)/i);
@@ -975,19 +1011,26 @@ function markdownFromDom(root) {
 	return text ? normalizeMarkdown(text) : "";
 }
 
+// ---------------------------------------------------------------------------
+// Preview cache
+// ---------------------------------------------------------------------------
+
 const previewCache = new WeakMap();
 
-function previewFromRoot(root) {
-	const cached = previewCache.get(root);
+function previewFromRoot(root, options = {}) {
+	const accurate = options.accurate === true;
+	const ttl = typeof options.ttl === "number" ? options.ttl : PREVIEW_CACHE_TTL_MS;
 	const now = Date.now();
-	if (cached && now - cached.ts < PREVIEW_CACHE_TTL_MS) {
+	const cached = previewCache.get(root);
+
+	if (cached && now - cached.ts < ttl) {
 		return cached.text;
 	}
 
 	const prose = root.querySelector(PROSE_SELECTOR) || root;
-	const text = String(prose.innerText || prose.textContent || "")
-		.replace(/\s+/g, " ")
-		.trim();
+	// textContent дешевле innerText: не форсирует layout.
+	const raw = accurate ? prose.innerText || prose.textContent || "" : prose.textContent || "";
+	const text = String(raw).replace(/\s+/g, " ").trim();
 
 	previewCache.set(root, { text, ts: now });
 	return text;
@@ -996,6 +1039,10 @@ function previewFromRoot(root) {
 function invalidatePreview(root) {
 	previewCache.delete(root);
 }
+
+// ---------------------------------------------------------------------------
+// Export
+// ---------------------------------------------------------------------------
 
 function requestReactMarkdown(items) {
 	const requestId = `arena-export-${Date.now()}-${++requestCounter}`;
@@ -1109,6 +1156,10 @@ async function runExport() {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Composer
+// ---------------------------------------------------------------------------
+
 function getComposerTextarea() {
 	for (const selector of COMPOSER_SELECTORS) {
 		const element = document.querySelector(selector);
@@ -1118,29 +1169,6 @@ function getComposerTextarea() {
 	}
 
 	return null;
-}
-
-async function waitForSendButton(timeoutMs = 8000) {
-	const startedAt = Date.now();
-
-	while (Date.now() - startedAt < timeoutMs) {
-		const button = document.querySelector(SEND_BUTTON_SELECTOR);
-		if (button && !button.disabled && button.getAttribute("aria-disabled") !== "true") {
-			return button;
-		}
-		await sleep(80);
-	}
-
-	return null;
-}
-
-async function clickSendButton() {
-	const button = await waitForSendButton();
-	if (!button) {
-		throw new Error("Send button did not become enabled in time");
-	}
-
-	button.click();
 }
 
 function setTextareaValue(textarea, value) {
@@ -1222,6 +1250,10 @@ function sleep(ms) {
 	});
 }
 
+// ---------------------------------------------------------------------------
+// Pending prompt / auto-send
+// ---------------------------------------------------------------------------
+
 function readPendingPrompt() {
 	try {
 		const raw = sessionStorage.getItem(PENDING_PROMPT_KEY);
@@ -1237,7 +1269,6 @@ function readPendingPrompt() {
 			};
 		}
 
-		// Совместимость со старым форматом (просто строка).
 		return { text: raw, url: "" };
 	} catch (_error) {
 		return null;
@@ -1278,6 +1309,29 @@ function pendingPromptMatchesPage(pendingUrl) {
 	} catch (_error) {
 		return true;
 	}
+}
+
+async function waitForSendButton(timeoutMs = 8000) {
+	const startedAt = Date.now();
+
+	while (Date.now() - startedAt < timeoutMs) {
+		const button = document.querySelector(SEND_BUTTON_SELECTOR);
+		if (button && !button.disabled && button.getAttribute("aria-disabled") !== "true") {
+			return button;
+		}
+		await sleep(80);
+	}
+
+	return null;
+}
+
+async function clickSendButton() {
+	const button = await waitForSendButton();
+	if (!button) {
+		throw new Error("Send button did not become enabled in time");
+	}
+
+	button.click();
 }
 
 async function insertPendingPrompt() {
@@ -1375,13 +1429,32 @@ function openChatTemplate(template) {
 	location.assign(next.href);
 }
 
+// ---------------------------------------------------------------------------
+// Autoscroll flag
+// ---------------------------------------------------------------------------
+
 function writeAutoscrollFlag(disabled) {
 	try {
 		sessionStorage.setItem(AUTOSCROLL_KEY, disabled ? "1" : "0");
 	} catch (_error) {
 		/* ignore */
 	}
+
+	const root = document.documentElement;
+	if (!root) {
+		return;
+	}
+
+	if (disabled) {
+		root.dataset.arenaUtilsNoAutoscroll = "1";
+	} else {
+		delete root.dataset.arenaUtilsNoAutoscroll;
+	}
 }
+
+// ---------------------------------------------------------------------------
+// Page style / theme
+// ---------------------------------------------------------------------------
 
 function ensurePageStyle() {
 	if (document.getElementById(PAGE_STYLE_ID)) {
@@ -1427,46 +1500,73 @@ function getPageTheme() {
 	return document.documentElement.classList.contains("dark") ? "dark" : "light";
 }
 
-function applyThemeToHost(host) {
+const pageThemeCache = {
+	theme: "",
+	vars: null,
+	bg: "",
+	raised: "",
+	border: "",
+};
+
+function readPageThemeValues() {
+	const theme = getPageTheme();
+
+	if (pageThemeCache.vars && pageThemeCache.theme === theme) {
+		return pageThemeCache;
+	}
+
+	const root = getComputedStyle(document.documentElement);
+	const body = getComputedStyle(document.body);
+	const readVar = (name) => root.getPropertyValue(name).trim();
+
+	pageThemeCache.theme = theme;
+	pageThemeCache.vars = {
+		"--header-primary": readVar("--header-primary"),
+		"--text-primary": readVar("--text-primary"),
+		"--text-secondary": readVar("--text-secondary"),
+		"--text-muted": readVar("--text-muted"),
+		"--interactive-active": readVar("--interactive-active"),
+	};
+	pageThemeCache.bg = body.backgroundColor || "";
+
+	const raised = document.querySelector(".bg-surface-raised");
+	pageThemeCache.raised = raised ? getComputedStyle(raised).backgroundColor : "";
+
+	const send = document.querySelector(SEND_BUTTON_SELECTOR);
+	pageThemeCache.border = send ? getComputedStyle(send).borderTopColor : "";
+
+	return pageThemeCache;
+}
+
+function applyThemeToHost(host, values) {
 	if (!host) {
 		return;
 	}
 
-	const theme = getPageTheme();
-	host.dataset.theme = theme;
+	const cache = values || readPageThemeValues();
+	host.dataset.theme = cache.theme;
 
-	const root = getComputedStyle(document.documentElement);
-	const body = getComputedStyle(document.body);
-	const raised = document.querySelector(".bg-surface-raised");
-	const send = document.querySelector(SEND_BUTTON_SELECTOR);
-
-	const copyVar = (name) => {
-		const value = root.getPropertyValue(name).trim();
+	for (const [name, value] of Object.entries(cache.vars || {})) {
 		if (value) {
 			host.style.setProperty(name, value);
 		}
-	};
-
-	copyVar("--header-primary");
-	copyVar("--text-primary");
-	copyVar("--text-secondary");
-	copyVar("--text-muted");
-	copyVar("--interactive-active");
-
-	host.style.setProperty("--arena-bg", body.backgroundColor);
-	if (raised) {
-		host.style.setProperty("--arena-raised", getComputedStyle(raised).backgroundColor);
 	}
-	if (send) {
-		host.style.setProperty("--arena-border", getComputedStyle(send).borderTopColor);
-	}
+
+	if (cache.bg) host.style.setProperty("--arena-bg", cache.bg);
+	if (cache.raised) host.style.setProperty("--arena-raised", cache.raised);
+	if (cache.border) host.style.setProperty("--arena-border", cache.border);
 }
 
 function applyPageTheme() {
-	applyThemeToHost(document.getElementById(HOST_ID));
-	applyThemeToHost(document.getElementById(NEW_CHAT_HOST_ID));
-	applyThemeToHost(document.getElementById(PROMPTS_HOST_ID));
+	const values = readPageThemeValues();
+	applyThemeToHost(document.getElementById(HOST_ID), values);
+	applyThemeToHost(document.getElementById(NEW_CHAT_HOST_ID), values);
+	applyThemeToHost(document.getElementById(PROMPTS_HOST_ID), values);
 }
+
+// ---------------------------------------------------------------------------
+// Code blocks
+// ---------------------------------------------------------------------------
 
 function getCodeHeader(block) {
 	return block.querySelector(":scope > div") || block.firstElementChild;
@@ -1478,14 +1578,33 @@ function getCodeLanguage(block) {
 	return String(label?.textContent || "code").trim() || "code";
 }
 
+const codeLineCache = new WeakMap();
+
 function countCodeLines(block) {
-	const code = block.querySelector("code");
-	const text = String(code?.innerText || block.innerText || "").replace(/\n+$/, "");
-	if (!text) {
-		return 0;
+	const cached = codeLineCache.get(block);
+	if (typeof cached === "number") {
+		return cached;
 	}
 
-	return text.split("\n").length;
+	const code = block.querySelector("code") || block;
+	// textContent не форсирует layout — в отличие от innerText.
+	const text = String(code.textContent || "").replace(/\n+$/, "");
+	let lines = 0;
+
+	if (text) {
+		const newlines = (text.match(/\n/g) || []).length;
+		if (newlines > 0) {
+			lines = newlines + 1;
+		} else {
+			// Подсветка синтаксиса иногда рендерит каждую строку как <span class="line">,
+			// без \n в тексте.
+			const lineEls = code.querySelectorAll(":scope > span, :scope > [class~='line']");
+			lines = Math.max(1, lineEls.length);
+		}
+	}
+
+	codeLineCache.set(block, lines);
+	return lines;
 }
 
 function isCodeBlockExpanded(block) {
@@ -1501,9 +1620,21 @@ function updateCodeToggle(block) {
 	const expanded = isCodeBlockExpanded(block);
 	const lines = countCodeLines(block);
 	const lang = getCodeLanguage(block);
-	button.textContent = expanded ? "Hide" : lines ? `Show · ${lines}` : "Show";
-	button.title = expanded ? `Hide ${lang}` : `Show ${lang}`;
-	button.setAttribute("aria-expanded", expanded ? "true" : "false");
+
+	const label = expanded ? "Hide" : lines ? `Show · ${lines}` : "Show";
+	if (button.textContent !== label) {
+		button.textContent = label;
+	}
+
+	const title = expanded ? `Hide ${lang}` : `Show ${lang}`;
+	if (button.title !== title) {
+		button.title = title;
+	}
+
+	const aria = expanded ? "true" : "false";
+	if (button.getAttribute("aria-expanded") !== aria) {
+		button.setAttribute("aria-expanded", aria);
+	}
 }
 
 function setCodeBlockExpanded(block, expanded) {
@@ -1554,7 +1685,7 @@ function teardownCodeBlock(block) {
 	block.querySelector(`.${CODE_TOGGLE_CLASS}`)?.remove();
 }
 
-function processCodeBlocks() {
+function processCodeBlocks(force = false) {
 	ensurePageStyle();
 
 	const messages = cachedMessages.length ? cachedMessages : collectMessages();
@@ -1568,8 +1699,21 @@ function processCodeBlocks() {
 		for (const block of message.root.querySelectorAll(CODE_BLOCK_SELECTOR)) {
 			seen.add(block);
 
+			const hasToggle = Boolean(block.querySelector(`.${CODE_TOGGLE_CLASS}`));
+			const hasFlag = block.dataset.arenaUtilsCode === "1";
+			const hasExpandedAttr = block.dataset.arenaUtilsExpanded === "0" || block.dataset.arenaUtilsExpanded === "1";
+
 			if (!collapseCodeBlocks) {
+				// Нет режима сворачивания: если блок уже развёрнут нативно — ничего не делаем.
+				if (!hasToggle && !hasFlag) {
+					continue;
+				}
 				teardownCodeBlock(block);
+				continue;
+			}
+
+			// Быстрый путь: всё уже сделано, ничего трогать не нужно.
+			if (!force && hasToggle && hasFlag && hasExpandedAttr) {
 				continue;
 			}
 
@@ -1584,18 +1728,22 @@ function processCodeBlocks() {
 		}
 	}
 
-	for (const block of document.querySelectorAll(`${CODE_BLOCK_SELECTOR}[data-arena-utils-code]`)) {
-		if (!seen.has(block) && !collapseCodeBlocks) {
-			teardownCodeBlock(block);
-		}
-	}
-
 	if (!collapseCodeBlocks) {
+		for (const block of document.querySelectorAll(`${CODE_BLOCK_SELECTOR}[data-arena-utils-code]`)) {
+			if (!seen.has(block)) {
+				teardownCodeBlock(block);
+			}
+		}
+
 		for (const block of document.querySelectorAll(`${CODE_BLOCK_SELECTOR}.${CODE_COLLAPSED_CLASS}`)) {
 			teardownCodeBlock(block);
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Panel (Messages)
+// ---------------------------------------------------------------------------
 
 function getPanelEls() {
 	const host = document.getElementById(HOST_ID);
@@ -1615,6 +1763,27 @@ function getPanelEls() {
 		chevron: host.shadowRoot.querySelector(".chevron"),
 	};
 }
+
+function setPanelCollapsed(collapsed, persist = true) {
+	panelCollapsed = Boolean(collapsed);
+	const els = getPanelEls();
+	if (els?.panel) {
+		els.panel.dataset.collapsed = panelCollapsed ? "true" : "false";
+		els.chevron.textContent = panelCollapsed ? "▾" : "▴";
+	}
+
+	if (!panelCollapsed) {
+		updateActiveItem({ follow: true });
+	}
+
+	if (persist) {
+		void chrome.storage.local.set({ panelCollapsed });
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Bookmark button wiring
+// ---------------------------------------------------------------------------
 
 function getBookmarkButton() {
 	const host = document.getElementById(HOST_ID);
@@ -1677,24 +1846,9 @@ async function toggleCurrentBookmark() {
 	showToast(exists ? "Bookmark removed" : `Bookmarked: ${title}`);
 }
 
-function setPanelCollapsed(collapsed, persist = true) {
-	panelCollapsed = Boolean(collapsed);
-	const els = getPanelEls();
-	if (els?.panel) {
-		els.panel.dataset.collapsed = panelCollapsed ? "true" : "false";
-		els.chevron.textContent = panelCollapsed ? "▾" : "▴";
-	}
-
-	positionPromptsPanel();
-
-	if (!panelCollapsed) {
-		updateActiveItem({ follow: true });
-	}
-
-	if (persist) {
-		void chrome.storage.local.set({ panelCollapsed });
-	}
-}
+// ---------------------------------------------------------------------------
+// Highlight
+// ---------------------------------------------------------------------------
 
 function highlightMessage(root) {
 	ensurePageStyle();
@@ -1710,6 +1864,10 @@ function highlightMessage(root) {
 		root.classList.remove(HIGHLIGHT_CLASS);
 	}, 1400);
 }
+
+// ---------------------------------------------------------------------------
+// Scrolling
+// ---------------------------------------------------------------------------
 
 function getScrollParent(el) {
 	let node = el?.parentElement;
@@ -1731,10 +1889,16 @@ function isWindowScroller(scroller) {
 }
 
 function withAllowedScroll(fn) {
+	const root = document.documentElement;
+
 	try {
 		sessionStorage.setItem(ALLOW_SCROLL_KEY, "1");
 	} catch (_error) {
 		/* ignore */
+	}
+
+	if (root) {
+		root.dataset.arenaUtilsAllowScroll = "1";
 	}
 
 	try {
@@ -1744,6 +1908,10 @@ function withAllowedScroll(fn) {
 			sessionStorage.removeItem(ALLOW_SCROLL_KEY);
 		} catch (_error) {
 			/* ignore */
+		}
+
+		if (root) {
+			delete root.dataset.arenaUtilsAllowScroll;
 		}
 	}
 }
@@ -1838,36 +2006,73 @@ function getCurrentMessageIndex(messages) {
 	}
 
 	const readingY = view.top + READING_LINE_OFFSET;
-	let current = -1;
-	let best = -1;
-	let bestDist = Infinity;
 
-	for (let i = 0; i < messages.length; i += 1) {
-		const rect = messages[i].root.getBoundingClientRect();
-		const visible = rect.bottom > view.top + 8 && rect.top < view.bottom - 8;
+	// Бинарный поиск: последнее сообщение, у которого top <= readingY.
+	// messages отсортированы визуально сверху вниз.
+	let low = 0;
+	let high = messages.length - 1;
+	let candidate = -1;
 
-		if (rect.top <= readingY && rect.bottom > view.top + 8) {
-			current = i;
-		}
+	while (low <= high) {
+		const mid = (low + high) >> 1;
+		const rect = messages[mid].root.getBoundingClientRect();
 
-		if (!visible) {
-			continue;
-		}
-
-		const dist = Math.abs(rect.top - readingY);
-		if (dist < bestDist) {
-			bestDist = dist;
-			best = i;
+		if (rect.top <= readingY) {
+			candidate = mid;
+			low = mid + 1;
+		} else {
+			high = mid - 1;
 		}
 	}
 
-	if (current >= 0) {
-		return current;
+	if (candidate < 0) {
+		candidate = 0;
 	}
-	if (best >= 0) {
-		return best;
+
+	const isVisible = (el) => {
+		const r = el.getBoundingClientRect();
+		return r.bottom > view.top + 8 && r.top < view.bottom - 8;
+	};
+
+	if (isVisible(messages[candidate].root)) {
+		return candidate;
 	}
-	return currentIndex >= 0 && currentIndex < messages.length ? currentIndex : -1;
+
+	for (let i = candidate - 1; i >= 0 && i >= candidate - 3; i -= 1) {
+		if (isVisible(messages[i].root)) {
+			return i;
+		}
+	}
+
+	for (let i = candidate + 1; i < messages.length && i <= candidate + 3; i += 1) {
+		if (isVisible(messages[i].root)) {
+			return i;
+		}
+	}
+
+	return candidate;
+}
+
+function maybeRefreshCurrentIndex(messages) {
+	const now = Date.now();
+
+	if (now < pinnedUntil) {
+		if (currentIndex >= messages.length) {
+			currentIndex = messages.length - 1;
+		}
+		return;
+	}
+
+	const countChanged = messages.length !== lastCurrentIndexScan.count;
+	const stale = now - lastCurrentIndexScan.at > 1500;
+	const outOfRange = currentIndex < 0 || currentIndex >= messages.length;
+
+	if (!countChanged && !stale && !outOfRange) {
+		return;
+	}
+
+	lastCurrentIndexScan = { count: messages.length, at: now };
+	currentIndex = getCurrentMessageIndex(messages);
 }
 
 function scrollChildIntoContainer(child, container) {
@@ -1989,6 +2194,10 @@ function ensureScrollWatch() {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Keyboard
+// ---------------------------------------------------------------------------
+
 function isTypingTarget(el) {
 	if (!el || !(el instanceof Element)) {
 		return false;
@@ -2018,6 +2227,10 @@ function onKeyDown(event) {
 	event.preventDefault();
 	stepMessage(event.key === "ArrowDown" ? 1 : -1);
 }
+
+// ---------------------------------------------------------------------------
+// Panel list rendering
+// ---------------------------------------------------------------------------
 
 function createPanelRow(root, role, index) {
 	const button = document.createElement("button");
@@ -2130,6 +2343,7 @@ function renderPanelList() {
 		els.list.insertBefore(row.button, cursor);
 	}
 
+	const lastIndex = nextRows.length - 1;
 	for (let i = 0; i < nextRows.length; i += 1) {
 		const row = nextRows[i];
 
@@ -2138,18 +2352,14 @@ function renderPanelList() {
 			row.numberEl.textContent = number;
 		}
 
-		const preview = previewFromRoot(row.root) || "(empty)";
+		const preview = previewFromRoot(row.root, i === lastIndex ? { accurate: true, ttl: 400 } : { ttl: 15000 }) || "(empty)";
+
 		if (row.previewEl.textContent !== preview) {
 			row.previewEl.textContent = preview;
 		}
 	}
 
-	if (Date.now() >= pinnedUntil) {
-		currentIndex = getCurrentMessageIndex(messages);
-	} else if (currentIndex >= messages.length) {
-		currentIndex = messages.length - 1;
-	}
-
+	maybeRefreshCurrentIndex(messages);
 	updateActiveItem();
 }
 
@@ -2211,7 +2421,12 @@ function ensurePanel() {
 	document.documentElement.appendChild(host);
 	renderPanelList();
 	applyPageTheme();
+	updateBookmarkButton();
 }
+
+// ---------------------------------------------------------------------------
+// New chat panel
+// ---------------------------------------------------------------------------
 
 function getNewChatPanelEls() {
 	const host = document.getElementById(NEW_CHAT_HOST_ID);
@@ -2331,6 +2546,10 @@ function ensureNewChatPanel() {
 	applyPageTheme();
 }
 
+// ---------------------------------------------------------------------------
+// Prompts panel
+// ---------------------------------------------------------------------------
+
 function getPromptsPanelEls() {
 	const host = document.getElementById(PROMPTS_HOST_ID);
 	if (!host?.shadowRoot) {
@@ -2351,8 +2570,8 @@ function positionPromptsPanel() {
 		return;
 	}
 
-	// Вычисляем горизонтальный отступ точно так же, как для New chat,
-	// чтобы обе панели выстраивались строго по одной вертикальной оси.
+	// Вычисляем отступ слева так же, как для New chat,
+	// чтобы обе панели выстраивались по одной вертикальной оси.
 	const target = document.querySelector(PORTAL_TARGET_SELECTOR);
 	const leftVal = target ? `${Math.max(8, Math.round(target.getBoundingClientRect().left + 12))}px` : "12px";
 
@@ -2362,8 +2581,6 @@ function positionPromptsPanel() {
 	let top = 56;
 	if (newChatHost && newChatPanel) {
 		const rect = newChatPanel.getBoundingClientRect();
-		// Если панель New chat отрендерена и имеет высоту,
-		// позиционируем Prompts ровно под её нижней границей.
 		if (rect.height > 0) {
 			top = rect.bottom + 10;
 		}
@@ -2469,9 +2686,37 @@ function ensurePromptsPanel() {
 	applyPageTheme();
 }
 
+// ---------------------------------------------------------------------------
+// Schedule
+// ---------------------------------------------------------------------------
+
+function isMutationInMessageList(records) {
+	const list = getMessageList();
+	if (!list) {
+		return false;
+	}
+
+	for (const record of records) {
+		const target = record.target;
+		if (!(target instanceof Node)) {
+			continue;
+		}
+
+		if (target === list || list.contains(target)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 function scheduleRefresh() {
 	window.clearTimeout(refreshTimer);
 	refreshTimer = window.setTimeout(() => {
+		if (document.hidden) {
+			return;
+		}
+
 		if (location.href !== lastUrl) {
 			lastUrl = location.href;
 			currentIndex = -1;
@@ -2491,8 +2736,13 @@ function scheduleRefresh() {
 		renderPanelList();
 		positionNewChatPanel();
 		positionPromptsPanel();
+		updateBookmarkButton();
 	}, 200);
 }
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
 
 async function init() {
 	ensurePageStyle();
@@ -2506,6 +2756,7 @@ async function init() {
 		collapseCodeBlocks: true,
 		chatTemplates: [],
 		prompts: [],
+		perfDebug: false,
 	});
 
 	panelCollapsed = Boolean(stored.panelCollapsed);
@@ -2526,16 +2777,24 @@ async function init() {
 	renderPanelList();
 	renderNewChatList();
 	renderPromptsList();
+	void refreshBookmarkCache();
 	void insertPendingPrompt();
 
-	new MutationObserver(() => {
-		scheduleRefresh();
+	if (stored.perfDebug) {
+		globalThis.ArenaPerf?.enable();
+	}
+
+	new MutationObserver((records) => {
+		if (isMutationInMessageList(records)) {
+			scheduleRefresh();
+		}
 	}).observe(document.documentElement, {
 		childList: true,
 		subtree: true,
 	});
 
 	new MutationObserver(() => {
+		pageThemeCache.vars = null;
 		applyPageTheme();
 	}).observe(document.documentElement, {
 		attributes: true,
@@ -2547,7 +2806,12 @@ async function init() {
 	window.addEventListener("resize", () => {
 		scheduleCurrentSync();
 		positionNewChatPanel();
-		updateBookmarkButton();
+		positionPromptsPanel();
+	});
+	document.addEventListener("visibilitychange", () => {
+		if (!document.hidden) {
+			scheduleRefresh();
+		}
 	});
 	document.addEventListener("keydown", onKeyDown, true);
 }
@@ -2567,7 +2831,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 	if (changes.collapseCodeBlocks) {
 		collapseCodeBlocks = changes.collapseCodeBlocks.newValue !== false;
-		processCodeBlocks();
+		processCodeBlocks(true);
 	}
 
 	if (changes.chatTemplates) {
@@ -2595,6 +2859,14 @@ chrome.storage.onChanged.addListener((changes, area) => {
 	if (changes.bookmarks) {
 		cachedBookmarkIds = new Set((Array.isArray(changes.bookmarks.newValue) ? changes.bookmarks.newValue : []).map((item) => item?.id).filter(Boolean));
 		updateBookmarkButton();
+	}
+
+	if (changes.perfDebug) {
+		if (changes.perfDebug.newValue) {
+			globalThis.ArenaPerf?.enable();
+		} else {
+			globalThis.ArenaPerf?.disable();
+		}
 	}
 });
 

@@ -27,7 +27,7 @@
 		},
 		{
 			"matches": ["https://arena.ai/*", "https://*.arena.ai/*"],
-			"js": ["shared.js", "scrollbars.js", "chatTemplates.js", "content.js"],
+			"js": ["shared.js", "perf.js", "scrollbars.js", "chatTemplates.js", "content.js", "perfWrap.js"],
 			"run_at": "document_idle"
 		}
 	],
