@@ -24,10 +24,6 @@ const resetVideoTemplateButton = document.getElementById("reset-video-template")
 const IDB_NAME = "arena-utils";
 const IDB_STORE = "handles";
 
-let saveTimer = 0;
-let templateSaveTimer = 0;
-let articleSaveTimer = 0;
-let videoSaveTimer = 0;
 let prompts = [];
 let chatTemplates = [];
 let dirHandle = null;
@@ -42,45 +38,70 @@ function uid() {
 	return `prompt-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function scheduleSave() {
-	window.clearTimeout(saveTimer);
-	saveTimer = window.setTimeout(() => {
-		void chrome.storage.local.set({ prompts });
-	}, 200);
+// Дебаунс с явным flush(): нужен, чтобы не терять последние правки,
+// если пользователь набрал текст и сразу закрыл вкладку.
+function createDebounced(fn, delayMs) {
+	let timer = 0;
+
+	function schedule() {
+		window.clearTimeout(timer);
+		timer = window.setTimeout(() => {
+			timer = 0;
+			fn();
+		}, delayMs);
+	}
+
+	schedule.flush = () => {
+		if (!timer) {
+			return;
+		}
+		window.clearTimeout(timer);
+		timer = 0;
+		fn();
+	};
+
+	schedule.cancel = () => {
+		window.clearTimeout(timer);
+		timer = 0;
+	};
+
+	return schedule;
 }
 
-function scheduleTemplateSave() {
-	window.clearTimeout(templateSaveTimer);
-	templateSaveTimer = window.setTimeout(() => {
-		void chrome.storage.local.set({ chatTemplates });
-	}, 200);
-}
+const scheduleSave = createDebounced(() => {
+	void chrome.storage.local.set({ prompts });
+}, 200);
 
-function scheduleArticleSave() {
-	window.clearTimeout(articleSaveTimer);
-	articleSaveTimer = window.setTimeout(() => {
-		const model = String(articleModelInput.value || "").trim() || ArenaShared.DEFAULT_ARTICLE_MODEL;
-		const template = String(articleTemplateInput.value || "");
+const scheduleTemplateSave = createDebounced(() => {
+	void chrome.storage.local.set({ chatTemplates });
+}, 200);
 
-		void chrome.storage.local.set({
-			articleModel: model,
-			articleTemplate: template,
-		});
-	}, 300);
-}
+const scheduleArticleSave = createDebounced(() => {
+	const model = String(articleModelInput.value || "").trim() || ArenaShared.DEFAULT_ARTICLE_MODEL;
+	const template = String(articleTemplateInput.value || "");
 
-function scheduleVideoSave() {
-	window.clearTimeout(videoSaveTimer);
-	videoSaveTimer = window.setTimeout(() => {
-		const model = String(videoModelInput.value || "").trim() || ArenaShared.DEFAULT_VIDEO_MODEL;
-		const template = String(videoTemplateInput.value || "");
+	void chrome.storage.local.set({
+		articleModel: model,
+		articleTemplate: template,
+	});
+}, 300);
 
-		void chrome.storage.local.set({
-			videoModel: model,
-			videoTemplate: template,
-		});
-	}, 300);
-}
+const scheduleVideoSave = createDebounced(() => {
+	const model = String(videoModelInput.value || "").trim() || ArenaShared.DEFAULT_VIDEO_MODEL;
+	const template = String(videoTemplateInput.value || "");
+
+	void chrome.storage.local.set({
+		videoModel: model,
+		videoTemplate: template,
+	});
+}, 300);
+
+window.addEventListener("pagehide", () => {
+	scheduleSave.flush();
+	scheduleTemplateSave.flush();
+	scheduleArticleSave.flush();
+	scheduleVideoSave.flush();
+});
 
 function renderPrompts() {
 	list.replaceChildren();

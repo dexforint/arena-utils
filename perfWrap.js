@@ -1,5 +1,10 @@
 // perfWrap.js — instruments content.js functions with ArenaPerf.
 // Loads AFTER content.js. Wraps top-level function declarations only.
+//
+// Requires content.js to declare hot functions as top-level function
+// declarations (i.e. not inside an IIFE) so they land on globalThis.
+// If you ever wrap content.js in an IIFE, this file will log a warning
+// and profiling will silently stay at zero.
 
 (() => {
 	const perf = globalThis.ArenaPerf;
@@ -94,9 +99,26 @@
 	installed = true;
 
 	let wrapped = 0;
+	const missing = [];
+
 	for (const name of HOT_FUNCTIONS) {
-		if (wrapOne(name)) wrapped += 1;
+		if (wrapOne(name)) {
+			wrapped += 1;
+			continue;
+		}
+
+		// Возможные причины промаха:
+		//  - функция уже обёрнута (нормально, второй проход);
+		//  - функции нет на globalThis — обычно значит, что content.js
+		//    обернули в IIFE и профилирование молча покажет нули.
+		if (typeof globalThis[name] !== "function") {
+			missing.push(name);
+		}
 	}
 
-	console.log(`[arena-utils perf] wrapped ${wrapped} function(s) for profiling`);
+	if (missing.length > 0) {
+		console.warn(`[arena-utils perf] ${missing.length} hot function(s) not on globalThis — likely content.js was wrapped in an IIFE. Missing:`, missing);
+	}
+
+	console.log(`[arena-utils perf] wrapped ${wrapped} of ${HOT_FUNCTIONS.length} function(s) for profiling`);
 })();

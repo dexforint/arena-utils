@@ -19,6 +19,15 @@ let prompts = [];
 let pendingPromptInFlight = false;
 let cachedBookmarkIds = new Set();
 let lastCurrentIndexScan = { count: -1, at: 0 };
+const SCROLL_PARENT_CACHE_MS = 500;
+let scrollParentCache = new WeakMap();
+let listObserver = null;
+let listObserverTarget = null;
+
+// ВАЖНО: функции ниже объявлены как top-level function declarations.
+// perfWrap.js находит их через globalThis и оборачивает для профилирования.
+// Обернуть весь файл в IIFE нельзя без правки perfWrap.js — иначе
+// профилирование молча покажет нули.
 
 const pendingRequests = new Map();
 
@@ -1305,7 +1314,22 @@ function pendingPromptMatchesPage(pendingUrl) {
 
 	try {
 		const expected = new URL(pendingUrl, location.origin);
-		return expected.pathname === location.pathname && expected.search === location.search;
+
+		// arena.ai после загрузки переписывает URL через history.replaceState
+		// (добавляет трекинг, переупорядочивает параметры). Сравниваем только
+		// pathname и ключевые model-параметры — иначе prompt тихо теряется.
+		if (expected.pathname !== location.pathname) {
+			return false;
+		}
+
+		const current = new URL(location.href);
+		for (const name of ["model_a", "model_b"]) {
+			if ((expected.searchParams.get(name) || "") !== (current.searchParams.get(name) || "")) {
+				return false;
+			}
+		}
+
+		return true;
 	} catch (_error) {
 		return true;
 	}
@@ -1365,6 +1389,10 @@ async function insertPendingPrompt() {
 	}
 
 	if (!pendingPromptMatchesPage(pendingUrl)) {
+		console.warn("[arena-utils] Pending prompt URL does not match the current page; skipping.", {
+			expected: pendingUrl,
+			current: location.href,
+		});
 		return;
 	}
 
@@ -1581,14 +1609,18 @@ function getCodeLanguage(block) {
 const codeLineCache = new WeakMap();
 
 function countCodeLines(block) {
-	const cached = codeLineCache.get(block);
-	if (typeof cached === "number") {
-		return cached;
-	}
-
 	const code = block.querySelector("code") || block;
 	// textContent не форсирует layout — в отличие от innerText.
 	const text = String(code.textContent || "").replace(/\n+$/, "");
+
+	// Кэш валиден только пока длина текста не изменилась. Во время
+	// стрима содержимое блока дописывается — иначе в лейбле навсегда
+	// застревает старое N.
+	const cached = codeLineCache.get(block);
+	if (cached && cached.textLength === text.length) {
+		return cached.lines;
+	}
+
 	let lines = 0;
 
 	if (text) {
@@ -1603,7 +1635,7 @@ function countCodeLines(block) {
 		}
 	}
 
-	codeLineCache.set(block, lines);
+	codeLineCache.set(block, { textLength: text.length, lines });
 	return lines;
 }
 
@@ -1704,7 +1736,6 @@ function processCodeBlocks(force = false) {
 			const hasExpandedAttr = block.dataset.arenaUtilsExpanded === "0" || block.dataset.arenaUtilsExpanded === "1";
 
 			if (!collapseCodeBlocks) {
-				// Нет режима сворачивания: если блок уже развёрнут нативно — ничего не делаем.
 				if (!hasToggle && !hasFlag) {
 					continue;
 				}
@@ -1712,8 +1743,10 @@ function processCodeBlocks(force = false) {
 				continue;
 			}
 
-			// Быстрый путь: всё уже сделано, ничего трогать не нужно.
+			// Быстрый путь: toggle уже на месте. Контент мог достримиться,
+			// поэтому обновляем лейбл — countCodeLines сам проверит кэш.
 			if (!force && hasToggle && hasFlag && hasExpandedAttr) {
+				updateCodeToggle(block);
 				continue;
 			}
 
@@ -1870,18 +1903,37 @@ function highlightMessage(root) {
 // ---------------------------------------------------------------------------
 
 function getScrollParent(el) {
+	const now = Date.now();
+
+	if (el) {
+		const cached = scrollParentCache.get(el);
+		if (cached && now - cached.at < SCROLL_PARENT_CACHE_MS) {
+			return cached.scroller;
+		}
+	}
+
 	let node = el?.parentElement;
+	let result = null;
 
 	while (node && node !== document.body && node !== document.documentElement) {
 		const overflowY = window.getComputedStyle(node).overflowY;
 		const canScroll = overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay";
 		if (canScroll && node.scrollHeight > node.clientHeight + 8) {
-			return node;
+			result = node;
+			break;
 		}
 		node = node.parentElement;
 	}
 
-	return document.scrollingElement || document.documentElement;
+	if (!result) {
+		result = document.scrollingElement || document.documentElement;
+	}
+
+	if (el) {
+		scrollParentCache.set(el, { at: now, scroller: result });
+	}
+
+	return result;
 }
 
 function isWindowScroller(scroller) {
@@ -2184,12 +2236,16 @@ function ensureScrollWatch() {
 		return;
 	}
 
-	if (boundScroller && boundScroller !== window && boundScroller !== document) {
+	if (boundScroller && !isWindowScroller(boundScroller)) {
 		boundScroller.removeEventListener("scroll", onScrollerScroll);
 	}
 
 	boundScroller = scroller;
-	if (scroller && scroller !== document && scroller !== window) {
+
+	// Для window/documentElement скролл уже ловится window-listener'ом
+	// из init(). Дублировать обработчик на самом элементе нельзя —
+	// onScrollerScroll будет вызван дважды на одно событие.
+	if (scroller && !isWindowScroller(scroller)) {
 		scroller.addEventListener("scroll", onScrollerScroll, { passive: true });
 	}
 }
@@ -2211,6 +2267,18 @@ function isTypingTarget(el) {
 	return Boolean(el.closest?.("textarea, input, select, [contenteditable='true']"));
 }
 
+function isInteractiveTarget(el) {
+	if (!el || !(el instanceof Element)) {
+		return false;
+	}
+
+	return Boolean(
+		el.closest?.(
+			"button, a[href], input, select, textarea, summary, [role='button'], [role='link'], [role='menuitem'], [role='option'], [role='tab'], [role='switch'], [contenteditable='true']",
+		),
+	);
+}
+
 function onKeyDown(event) {
 	if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
 		return;
@@ -2220,7 +2288,18 @@ function onKeyDown(event) {
 		return;
 	}
 
-	if (isTypingTarget(event.target) || (cachedMessages.length === 0 && collectMessages().length === 0)) {
+	// composedPath()[0] проходит сквозь Shadow DOM: иначе клик по нашим
+	// панелям (Messages / New chat / Prompts) давал бы target = host и
+	// стрелки внутри кнопок улетали бы в навигацию по сообщениям.
+	const actualTarget = typeof event.composedPath === "function" ? event.composedPath()[0] : event.target;
+
+	if (isTypingTarget(actualTarget) || isInteractiveTarget(actualTarget)) {
+		return;
+	}
+
+	// Не мешаем обычному скроллу, пока достоверно не знаем, что на
+	// странице есть сообщения.
+	if (cachedMessages.length === 0 && collectMessages().length === 0) {
 		return;
 	}
 
@@ -2710,6 +2789,28 @@ function isMutationInMessageList(records) {
 	return false;
 }
 
+function ensureListObserver() {
+	// Наблюдаем за <main>, а не за всем documentElement: на странице чата
+	// весь живой контент (список сообщений, стрим ответа) лежит под main,
+	// а header/sidebar/тосты нас не интересуют.
+	const target = document.querySelector("main") || document.body || document.documentElement;
+	if (!target || target === listObserverTarget) {
+		return;
+	}
+
+	if (listObserver) {
+		listObserver.disconnect();
+	}
+
+	listObserverTarget = target;
+	listObserver = new MutationObserver((records) => {
+		if (isMutationInMessageList(records)) {
+			scheduleRefresh();
+		}
+	});
+	listObserver.observe(target, { childList: true, subtree: true });
+}
+
 function scheduleRefresh() {
 	window.clearTimeout(refreshTimer);
 	refreshTimer = window.setTimeout(() => {
@@ -2721,10 +2822,14 @@ function scheduleRefresh() {
 			lastUrl = location.href;
 			currentIndex = -1;
 
+			// Страница переехала — старые ссылки на DOM невалидны.
+			scrollParentCache = new WeakMap();
+
 			if (!newChatCollapsedOverride) {
 				setNewChatCollapsed(isExistingChatPage(), false);
 			}
 
+			ensureListObserver();
 			void insertPendingPrompt();
 		}
 
@@ -2784,14 +2889,7 @@ async function init() {
 		globalThis.ArenaPerf?.enable();
 	}
 
-	new MutationObserver((records) => {
-		if (isMutationInMessageList(records)) {
-			scheduleRefresh();
-		}
-	}).observe(document.documentElement, {
-		childList: true,
-		subtree: true,
-	});
+	ensureListObserver();
 
 	new MutationObserver(() => {
 		pageThemeCache.vars = null;

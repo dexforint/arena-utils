@@ -373,29 +373,6 @@
 			this.totalChars = 0;
 		}
 
-		write(text) {
-			let position = 0;
-			const value = String(text ?? "");
-
-			while (position < value.length) {
-				if (!this.current && this.parts.length === 0) {
-					this.current = "";
-				}
-
-				if (this.maxChars && this.current.length === this.maxChars) {
-					this.parts.push(this.current);
-					this.current = "";
-				}
-
-				const available = this.maxChars ? this.maxChars - this.current.length : value.length - position;
-				const end = position + Math.min(available, value.length - position);
-				const fragment = value.slice(position, end);
-				this.current += fragment;
-				this.totalChars += fragment.length;
-				position = end;
-			}
-		}
-
 		finish() {
 			if (this.current || this.parts.length === 0) {
 				this.parts.push(this.current);

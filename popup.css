@@ -275,8 +275,9 @@ section {
 	transition: background 0.15s ease;
 }
 
+/* Было: hover ставил тот же background, что и база — визуально ничего
+   не менялось. Теперь только opacity, как у #explain-video. */
 #explain-article:hover:not(:disabled) {
-	background: rgb(var(--surface-raised));
 	opacity: 0.9;
 }
 

@@ -139,14 +139,30 @@ function scheduleOffscreenClose() {
 }
 
 function sendMessageWithTimeout(message, timeoutMs = OFFSCREEN_REPLY_TIMEOUT_MS) {
-	let timer = 0;
+	// Свой race вместо Promise.race: у последнего проигравшая ветка
+	// остаётся висеть и её rejection улетает в unhandledrejection.
+	return new Promise((resolve, reject) => {
+		let settled = false;
+		let timer = 0;
 
-	return Promise.race([
-		chrome.runtime.sendMessage(message).finally(() => clearTimeout(timer)),
-		new Promise((_, reject) => {
-			timer = setTimeout(() => reject(new Error("Offscreen response timeout")), timeoutMs);
-		}),
-	]);
+		function finish(fn, value) {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			clearTimeout(timer);
+			fn(value);
+		}
+
+		timer = setTimeout(() => {
+			finish(reject, new Error("Offscreen response timeout"));
+		}, timeoutMs);
+
+		chrome.runtime
+			.sendMessage(message)
+			.then((response) => finish(resolve, response))
+			.catch((error) => finish(reject, error));
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -183,7 +199,18 @@ function revokeBlobUrlsInOffscreen(urls) {
 
 function waitForDownloadCompletion(downloadId, timeoutMs = DOWNLOAD_COMPLETE_TIMEOUT_MS) {
 	return new Promise((resolve) => {
+		let settled = false;
 		let timer = 0;
+
+		function finish(state) {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			clearTimeout(timer);
+			chrome.downloads.onChanged.removeListener(listener);
+			resolve(state);
+		}
 
 		function listener(delta) {
 			if (delta.id !== downloadId || !delta.state) {
@@ -191,21 +218,30 @@ function waitForDownloadCompletion(downloadId, timeoutMs = DOWNLOAD_COMPLETE_TIM
 			}
 
 			const state = delta.state.current;
-			if (state !== "complete" && state !== "interrupted") {
-				return;
+			if (state === "complete" || state === "interrupted") {
+				finish(state);
 			}
-
-			clearTimeout(timer);
-			chrome.downloads.onChanged.removeListener(listener);
-			resolve(state);
 		}
 
-		timer = setTimeout(() => {
-			chrome.downloads.onChanged.removeListener(listener);
-			resolve("timeout");
-		}, timeoutMs);
-
+		// Подписка ставится синхронно — до любого await, иначе крохотный
+		// blob может скачаться ещё до того, как мы её поставим.
 		chrome.downloads.onChanged.addListener(listener);
+
+		// Параллельная страховка: если событие всё-таки ушло «в окне» —
+		// подхватываем текущее состояние через search().
+		chrome.downloads
+			.search({ id: downloadId })
+			.then((items) => {
+				const item = items && items[0];
+				if (item && (item.state === "complete" || item.state === "interrupted")) {
+					finish(item.state);
+				}
+			})
+			.catch(() => {
+				/* остаёмся на listener'е */
+			});
+
+		timer = setTimeout(() => finish("timeout"), timeoutMs);
 	});
 }
 

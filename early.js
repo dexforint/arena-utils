@@ -55,7 +55,10 @@
 		}
 	});
 
-	observer.observe(document.documentElement, {
+	// На document_start documentElement может ещё не существовать —
+	// observer.observe(null, ...) бросает. document доступен всегда.
+	const observeTarget = document.documentElement || document;
+	observer.observe(observeTarget, {
 		childList: true,
 		subtree: true,
 	});

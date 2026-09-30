@@ -789,9 +789,11 @@
 		}
 
 		// --- Step 4: DOM transcript panel --------------------------------
-		if (tracks.length > 0 || true) {
-			// Пробуем даже если tracks пусто — иногда панель рендерит сегменты
-			// без tracks в playerResponse (например, из-за AI-вариантов).
+		// Пробуем даже если tracks пусто — иногда панель рендерит сегменты
+		// без tracks в playerResponse (например, из-за AI-вариантов).
+		// Раньше здесь стоял `if (tracks.length > 0 || true)` — то же самое,
+		// что просто блок; убрали, чтобы не сбивать с толку.
+		{
 			const segments = await extractFromTranscriptPanel();
 			if (segments && segments.length > 0) {
 				debug.push(`transcript panel: ok (${segments.length} segments)`);
