@@ -1,19 +1,15 @@
+const t = (key, subs) => globalThis.ArenaI18n?.t(key, subs) || key;
+
 const list = document.getElementById("list");
 const addButton = document.getElementById("add");
 const collapseCodeInput = document.getElementById("collapse-code");
 const templateList = document.getElementById("template-list");
 const addTemplateButton = document.getElementById("add-template");
-const pickFolderButton = document.getElementById("pick-folder");
-const generateButton = document.getElementById("generate");
-const clearButton = document.getElementById("clear-codebase");
-const folderNameEl = document.getElementById("folder-name");
 const maxCharsInput = document.getElementById("max-chars");
 const gitignoreInput = document.getElementById("use-gitignore");
 const excludeInput = document.getElementById("exclude");
 const contentExcludeInput = document.getElementById("content-exclude");
-const statusEl = document.getElementById("codebase-status");
-const chunkList = document.getElementById("chunk-list");
-const restoreAccessButton = document.getElementById("restore-access");
+const codebaseStatusEl = document.getElementById("codebase-status");
 const articleModelInput = document.getElementById("article-model");
 const articleTemplateInput = document.getElementById("article-template");
 const resetArticleTemplateButton = document.getElementById("reset-article-template");
@@ -21,14 +17,8 @@ const videoModelInput = document.getElementById("video-model");
 const videoTemplateInput = document.getElementById("video-template");
 const resetVideoTemplateButton = document.getElementById("reset-video-template");
 
-const IDB_NAME = "arena-utils";
-const IDB_STORE = "handles";
-
 let prompts = [];
 let chatTemplates = [];
-let dirHandle = null;
-let hasFolderAccess = false;
-let generating = false;
 
 function uid() {
 	if (crypto.randomUUID) {
@@ -38,8 +28,6 @@ function uid() {
 	return `prompt-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-// Дебаунс с явным flush(): нужен, чтобы не терять последние правки,
-// если пользователь набрал текст и сразу закрыл вкладку.
 function createDebounced(fn, delayMs) {
 	let timer = 0;
 
@@ -58,11 +46,6 @@ function createDebounced(fn, delayMs) {
 		window.clearTimeout(timer);
 		timer = 0;
 		fn();
-	};
-
-	schedule.cancel = () => {
-		window.clearTimeout(timer);
-		timer = 0;
 	};
 
 	return schedule;
@@ -96,12 +79,44 @@ const scheduleVideoSave = createDebounced(() => {
 	});
 }, 300);
 
+const scheduleCodebaseSave = createDebounced(() => {
+	void chrome.storage.local.set({
+		codebaseSettings: readCodebaseSettings(),
+	});
+
+	if (codebaseStatusEl) {
+		codebaseStatusEl.textContent = t("optionsCodebaseSaved");
+		window.setTimeout(() => {
+			if (codebaseStatusEl.textContent === t("optionsCodebaseSaved")) {
+				codebaseStatusEl.textContent = "";
+			}
+		}, 1500);
+	}
+}, 250);
+
 window.addEventListener("pagehide", () => {
 	scheduleSave.flush();
 	scheduleTemplateSave.flush();
 	scheduleArticleSave.flush();
 	scheduleVideoSave.flush();
+	scheduleCodebaseSave.flush();
 });
+
+function readCodebaseSettings() {
+	return {
+		maxChars: Number(maxCharsInput.value) || 100000,
+		gitignore: gitignoreInput.checked,
+		exclude: excludeInput.value,
+		contentExclude: contentExcludeInput.value,
+	};
+}
+
+function applyCodebaseSettings(settings) {
+	maxCharsInput.value = String(settings.maxChars ?? 100000);
+	gitignoreInput.checked = Boolean(settings.gitignore);
+	excludeInput.value = settings.exclude ?? window.ArenaCodebase.DEFAULT_FULL_EXCLUDE.join("\n");
+	contentExcludeInput.value = settings.contentExclude ?? window.ArenaCodebase.DEFAULT_CONTENT_EXCLUDE.join("\n");
+}
 
 function renderPrompts() {
 	list.replaceChildren();
@@ -109,7 +124,7 @@ function renderPrompts() {
 	if (prompts.length === 0) {
 		const empty = document.createElement("div");
 		empty.className = "empty";
-		empty.textContent = "No prompts yet. Add one and it will show up in the popup.";
+		empty.textContent = t("optionsPromptsEmpty");
 		list.appendChild(empty);
 		return;
 	}
@@ -118,15 +133,21 @@ function renderPrompts() {
 		const card = document.createElement("article");
 		card.className = "card";
 		card.innerHTML = `
-			<input class="name" type="text" placeholder="Name" />
-			<textarea class="text" placeholder="Prompt text"></textarea>
+			<input class="name" type="text" />
+			<textarea class="text"></textarea>
 			<div class="card-actions">
-				<button class="delete" type="button">Delete</button>
+				<button class="delete" type="button"></button>
 			</div>
 		`;
 
 		const nameInput = card.querySelector(".name");
 		const textInput = card.querySelector(".text");
+		const deleteButton = card.querySelector(".delete");
+
+		nameInput.placeholder = t("optionsNamePlaceholder");
+		textInput.placeholder = t("optionsPromptTextPlaceholder");
+		deleteButton.textContent = t("optionsDeleteButton");
+
 		nameInput.value = prompt.name || "";
 		textInput.value = prompt.text || "";
 
@@ -140,7 +161,7 @@ function renderPrompts() {
 			scheduleSave();
 		});
 
-		card.querySelector(".delete").addEventListener("click", () => {
+		deleteButton.addEventListener("click", () => {
 			prompts = prompts.filter((item) => item.id !== prompt.id);
 			scheduleSave();
 			renderPrompts();
@@ -194,7 +215,7 @@ function renderTemplates() {
 	if (chatTemplates.length === 0) {
 		const empty = document.createElement("div");
 		empty.className = "empty";
-		empty.textContent = "No chat templates yet. Add one and it will show up in the New chat panel.";
+		empty.textContent = t("optionsTemplatesEmpty");
 		templateList.appendChild(empty);
 		return;
 	}
@@ -203,32 +224,32 @@ function renderTemplates() {
 		const card = document.createElement("article");
 		card.className = "card";
 		card.innerHTML = `
-			<input class="name" type="text" placeholder="Button name" />
+			<input class="name" type="text" />
 			<div class="template-grid">
 				<label class="field">
-					<span>Chat type</span>
+					<span class="label-chat-type"></span>
 					<select class="chat-type"></select>
 				</label>
 				<label class="field category-field">
-					<span>Category</span>
+					<span class="label-category"></span>
 					<select class="category"></select>
 				</label>
 				<label class="field model-a-field">
-					<span>Model A</span>
+					<span class="label-model-a"></span>
 					<input class="model-a" type="text" placeholder="gemini-3.8-flash-high" spellcheck="false" />
 				</label>
 				<label class="field model-b-field">
-					<span>Model B</span>
+					<span class="label-model-b"></span>
 					<input class="model-b" type="text" placeholder="claude-sonnet-4-6-search" spellcheck="false" />
 				</label>
 			</div>
 			<label class="field">
-				<span>Initial prompt (optional)</span>
-				<textarea class="prompt-text" placeholder="Leave empty to open an empty composer"></textarea>
+				<span class="label-initial-prompt"></span>
+				<textarea class="prompt-text"></textarea>
 			</label>
 			<p class="url-preview"></p>
 			<div class="card-actions">
-				<button class="delete" type="button">Delete</button>
+				<button class="delete" type="button"></button>
 			</div>
 		`;
 
@@ -238,6 +259,16 @@ function renderTemplates() {
 		const modelAInput = card.querySelector(".model-a");
 		const modelBInput = card.querySelector(".model-b");
 		const promptInput = card.querySelector(".prompt-text");
+		const deleteButton = card.querySelector(".delete");
+
+		card.querySelector(".label-chat-type").textContent = t("optionsChatTypeLabel");
+		card.querySelector(".label-category").textContent = t("optionsCategoryLabel");
+		card.querySelector(".label-model-a").textContent = t("optionsModelALabel");
+		card.querySelector(".label-model-b").textContent = t("optionsModelBLabel");
+		card.querySelector(".label-initial-prompt").textContent = t("optionsInitialPromptLabel");
+		nameInput.placeholder = t("optionsTemplateNamePlaceholder");
+		promptInput.placeholder = t("optionsTemplatePromptPlaceholder");
+		deleteButton.textContent = t("optionsDeleteButton");
 
 		nameInput.value = template.name || "";
 		modelAInput.value = template.modelA || "";
@@ -285,151 +316,13 @@ function renderTemplates() {
 			scheduleTemplateSave();
 		});
 
-		card.querySelector(".delete").addEventListener("click", () => {
+		deleteButton.addEventListener("click", () => {
 			chatTemplates = chatTemplates.filter((item) => item.id !== template.id);
 			scheduleTemplateSave();
 			renderTemplates();
 		});
 
 		templateList.appendChild(card);
-	}
-}
-
-function formatChars(value) {
-	return new Intl.NumberFormat().format(value);
-}
-
-function setStatus(text) {
-	statusEl.textContent = text;
-}
-
-function renderSnapshot(snapshot) {
-	chunkList.replaceChildren();
-
-	if (!snapshot?.chunks?.length) {
-		return;
-	}
-
-	for (const chunk of snapshot.chunks) {
-		const row = document.createElement("div");
-		row.className = "chunk";
-		row.innerHTML = `<strong></strong><span class="muted"></span>`;
-		row.querySelector("strong").textContent = chunk.name;
-		row.querySelector("span").textContent = `${formatChars(chunk.chars)} characters`;
-		chunkList.appendChild(row);
-	}
-}
-
-function currentSettings() {
-	return {
-		maxChars: Number(maxCharsInput.value) || 100000,
-		gitignore: gitignoreInput.checked,
-		exclude: excludeInput.value,
-		contentExclude: contentExcludeInput.value,
-	};
-}
-
-function applySettings(settings) {
-	maxCharsInput.value = String(settings.maxChars ?? 100000);
-	gitignoreInput.checked = Boolean(settings.gitignore);
-	excludeInput.value = settings.exclude ?? window.ArenaCodebase.DEFAULT_FULL_EXCLUDE.join("\n");
-	contentExcludeInput.value = settings.contentExclude ?? window.ArenaCodebase.DEFAULT_CONTENT_EXCLUDE.join("\n");
-}
-
-async function saveSettings() {
-	await chrome.storage.local.set({
-		codebaseSettings: currentSettings(),
-	});
-}
-
-const IDB_VERSION = 2;
-
-function openHandlesDb() {
-	return new Promise((resolve, reject) => {
-		const request = indexedDB.open(IDB_NAME, IDB_VERSION);
-
-		request.onupgradeneeded = () => {
-			const db = request.result;
-
-			if (!db.objectStoreNames.contains(IDB_STORE)) {
-				db.createObjectStore(IDB_STORE);
-			}
-
-			// v2: миграции сюда, когда появятся дополнительные хранилища.
-		};
-
-		request.onblocked = () => {
-			reject(new Error("IndexedDB upgrade blocked by another tab. Close other extension pages and try again."));
-		};
-
-		request.onsuccess = () => resolve(request.result);
-		request.onerror = () => reject(request.error);
-	});
-}
-
-async function saveDirHandle(handle) {
-	const db = await openHandlesDb();
-	await new Promise((resolve, reject) => {
-		const tx = db.transaction(IDB_STORE, "readwrite");
-		tx.objectStore(IDB_STORE).put(handle, "codebaseDir");
-		tx.oncomplete = () => resolve();
-		tx.onerror = () => reject(tx.error);
-	});
-}
-
-async function loadDirHandle() {
-	const db = await openHandlesDb();
-	return new Promise((resolve, reject) => {
-		const tx = db.transaction(IDB_STORE, "readonly");
-		const request = tx.objectStore(IDB_STORE).get("codebaseDir");
-		request.onsuccess = () => resolve(request.result || null);
-		request.onerror = () => reject(request.error);
-	});
-}
-
-async function queryPermission(handle) {
-	if (!handle) {
-		return false;
-	}
-
-	try {
-		return (await handle.queryPermission({ mode: "read" })) === "granted";
-	} catch (_error) {
-		return false;
-	}
-}
-
-async function requestPermission(handle) {
-	if (!handle) {
-		return false;
-	}
-
-	try {
-		if ((await handle.queryPermission({ mode: "read" })) === "granted") {
-			return true;
-		}
-
-		return (await handle.requestPermission({ mode: "read" })) === "granted";
-	} catch (_error) {
-		return false;
-	}
-}
-
-function updateFolderLabel() {
-	if (!dirHandle) {
-		folderNameEl.textContent = "No folder selected";
-		folderNameEl.classList.remove("warning");
-		if (restoreAccessButton) {
-			restoreAccessButton.hidden = true;
-		}
-		return;
-	}
-
-	folderNameEl.textContent = dirHandle.name;
-	folderNameEl.classList.toggle("warning", !hasFolderAccess);
-
-	if (restoreAccessButton) {
-		restoreAccessButton.hidden = hasFolderAccess;
 	}
 }
 
@@ -442,7 +335,7 @@ function applyOptionsTheme() {
 addButton.addEventListener("click", () => {
 	prompts.push({
 		id: uid(),
-		name: "New prompt",
+		name: t("optionsNewPromptName"),
 		text: "",
 	});
 	scheduleSave();
@@ -452,7 +345,7 @@ addButton.addEventListener("click", () => {
 addTemplateButton.addEventListener("click", () => {
 	chatTemplates.push({
 		id: uid(),
-		name: "New template",
+		name: t("optionsNewTemplateName"),
 		chatType: "direct",
 		category: "text",
 		modelA: "",
@@ -469,102 +362,10 @@ collapseCodeInput.addEventListener("change", async () => {
 	});
 });
 
-pickFolderButton.addEventListener("click", async () => {
-	try {
-		const handle = await window.showDirectoryPicker({
-			mode: "read",
-		});
-		dirHandle = handle;
-		hasFolderAccess = true;
-		await saveDirHandle(handle);
-		updateFolderLabel();
-		setStatus(`Folder selected: ${handle.name}`);
-	} catch (error) {
-		if (error?.name !== "AbortError") {
-			setStatus(error instanceof Error ? error.message : String(error));
-		}
-	}
-});
-
-restoreAccessButton?.addEventListener("click", async () => {
-	if (!dirHandle) {
-		return;
-	}
-
-	const granted = await requestPermission(dirHandle);
-	hasFolderAccess = granted;
-	updateFolderLabel();
-
-	if (!granted) {
-		setStatus("Folder access was not granted.");
-		return;
-	}
-
-	setStatus(`Access to ${dirHandle.name} restored.`);
-});
-
 for (const input of [maxCharsInput, gitignoreInput, excludeInput, contentExcludeInput]) {
-	input.addEventListener("change", () => {
-		void saveSettings();
-	});
+	input.addEventListener("input", scheduleCodebaseSave);
+	input.addEventListener("change", scheduleCodebaseSave);
 }
-
-generateButton.addEventListener("click", async () => {
-	if (generating) {
-		return;
-	}
-
-	if (!dirHandle) {
-		setStatus("Select a folder first.");
-		return;
-	}
-
-	generating = true;
-	generateButton.disabled = true;
-	pickFolderButton.disabled = true;
-
-	try {
-		if (!(await requestPermission(dirHandle))) {
-			throw new Error("Folder permission was not granted. Click Restore access and try again.");
-		}
-
-		hasFolderAccess = true;
-		updateFolderLabel();
-
-		await saveSettings();
-		const settings = currentSettings();
-		const snapshot = await window.ArenaCodebase.generateSnapshot(
-			dirHandle,
-			{
-				maxChars: settings.maxChars,
-				gitignore: settings.gitignore,
-				exclude: settings.exclude,
-				contentExclude: settings.contentExclude,
-			},
-			(message) => setStatus(message),
-		);
-
-		await chrome.storage.local.set({ codebaseSnapshot: snapshot });
-		renderSnapshot(snapshot);
-		setStatus(
-			`Output: ${snapshot.folderName}\n` +
-				`Parts: ${snapshot.stats.parts}; characters: ${formatChars(snapshot.stats.characters)}; ` +
-				`text files: ${snapshot.stats.textFiles}; skipped regular files: ${snapshot.stats.skipped}`,
-		);
-	} catch (error) {
-		setStatus(error instanceof Error ? error.message : String(error));
-	} finally {
-		generating = false;
-		generateButton.disabled = false;
-		pickFolderButton.disabled = false;
-	}
-});
-
-clearButton.addEventListener("click", async () => {
-	await chrome.storage.local.remove("codebaseSnapshot");
-	chunkList.replaceChildren();
-	setStatus("Generated codebase prompts cleared.");
-});
 
 articleModelInput.addEventListener("input", scheduleArticleSave);
 articleTemplateInput.addEventListener("input", scheduleArticleSave);
@@ -585,6 +386,7 @@ resetVideoTemplateButton.addEventListener("click", () => {
 });
 
 async function init() {
+	globalThis.ArenaI18n?.apply();
 	applyOptionsTheme();
 	window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyOptionsTheme);
 
@@ -593,7 +395,6 @@ async function init() {
 		collapseCodeBlocks: true,
 		chatTemplates: ArenaChatTemplates.DEFAULTS,
 		codebaseSettings: null,
-		codebaseSnapshot: null,
 		articleModel: ArenaShared.DEFAULT_ARTICLE_MODEL,
 		articleTemplate: ArenaShared.DEFAULT_ARTICLE_TEMPLATE,
 		videoModel: ArenaShared.DEFAULT_VIDEO_MODEL,
@@ -612,7 +413,7 @@ async function init() {
 	videoModelInput.value = String(stored.videoModel || ArenaShared.DEFAULT_VIDEO_MODEL);
 	videoTemplateInput.value = String(stored.videoTemplate || ArenaShared.DEFAULT_VIDEO_TEMPLATE);
 
-	applySettings(
+	applyCodebaseSettings(
 		stored.codebaseSettings || {
 			maxChars: 100000,
 			gitignore: false,
@@ -621,33 +422,11 @@ async function init() {
 		},
 	);
 
-	if (stored.codebaseSnapshot) {
-		renderSnapshot(stored.codebaseSnapshot);
-		setStatus(stored.codebaseSnapshot.folderName ? `Last snapshot: ${stored.codebaseSnapshot.folderName} · ${stored.codebaseSnapshot.stats.parts} parts` : "");
-	}
-
-	try {
-		dirHandle = await loadDirHandle();
-		hasFolderAccess = dirHandle ? await queryPermission(dirHandle) : false;
-	} catch (_error) {
-		dirHandle = null;
-		hasFolderAccess = false;
-	}
-
-	updateFolderLabel();
-
-	if (dirHandle && !hasFolderAccess) {
-		setStatus(`Folder "${dirHandle.name}" needs access permission. Click "Restore access" to grant it.`);
-	}
-
 	if (location.hash === "#codebase") {
 		document.getElementById("codebase")?.scrollIntoView();
-	}
-
-	if (location.hash === "#chat-templates") {
+	} else if (location.hash === "#chat-templates") {
 		document.getElementById("chat-templates")?.scrollIntoView();
-	}
-	if (location.hash === "#prompts") {
+	} else if (location.hash === "#prompts") {
 		document.getElementById("prompts")?.scrollIntoView();
 	}
 }

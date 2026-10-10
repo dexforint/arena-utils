@@ -36,6 +36,17 @@ let codebaseGenerating = false;
 const pendingRequests = new Map();
 
 const Shared = globalThis.ArenaShared;
+const I18n = globalThis.ArenaI18n;
+const t = (key, subs) => {
+	if (!key) {
+		return "";
+	}
+	if (I18n?.t) {
+		return I18n.t(key, subs);
+	}
+	return key;
+};
+
 if (!Shared) {
 	console.error("[arena-utils] shared.js is missing; using inline fallbacks");
 }
@@ -1235,7 +1246,7 @@ function requestReactMarkdown(items) {
 
 async function runExport() {
 	if (exportInProgress) {
-		showToast("Export is already underway");
+		showToast(t("contentToastExportAlready"));
 		return;
 	}
 
@@ -1244,7 +1255,7 @@ async function runExport() {
 	try {
 		const orderedEntries = collectMessages();
 		if (orderedEntries.length === 0) {
-			throw new Error("Could not find messages");
+			throw new Error(t("contentErrorNoMessages"));
 		}
 
 		const requestItems = orderedEntries.map((entry, index) => {
@@ -1253,7 +1264,7 @@ async function runExport() {
 			return { id };
 		});
 
-		showToast(`Exporting ${orderedEntries.length} messages...`);
+		showToast(t("contentToastExporting", [String(orderedEntries.length)]));
 
 		let results = {};
 		try {
@@ -1272,7 +1283,7 @@ async function runExport() {
 
 			if (!text.trim()) {
 				console.log("[arena-utils] Failed container:", orderedEntries[i].root);
-				throw new Error(`Didn't find Markdown for message ${i + 1}`);
+				throw new Error(t("contentErrorNoMarkdown", [String(i + 1)]));
 			}
 
 			files.push({ name: `${i + 1}.md`, text });
@@ -1301,13 +1312,13 @@ async function runExport() {
 				.map((item) => `${item?.name || "?"}: ${item?.error || "unknown"}`)
 				.join("; ");
 
-			throw new Error(downloadResult?.error || details || "Failed to download files");
+			throw new Error(downloadResult?.error || details || t("contentErrorDownloadFailed"));
 		}
 
-		showToast(`Done: ${files.length} files`);
+		showToast(t("contentToastExportDone", [String(files.length)]));
 	} catch (error) {
 		console.error("[arena-utils]", error);
-		showToast(`Error: ${error instanceof Error ? error.message : String(error)}`);
+		showToast(t("contentToastError", [error instanceof Error ? error.message : String(error)]));
 		throw error;
 	} finally {
 		for (const node of document.querySelectorAll(`[${EXPORT_ATTR}]`)) {
@@ -1366,7 +1377,7 @@ function fillComposer(text) {
 	const value = String(text || "");
 	const textarea = getComposerTextarea();
 	if (!textarea) {
-		throw new Error("Composer textarea not found");
+		throw new Error(t("contentComposerNotFound"));
 	}
 
 	setTextareaValue(textarea, value);
@@ -1386,7 +1397,7 @@ function insertPrompt(text) {
 	const value = String(text || "");
 	const textarea = getComposerTextarea();
 	if (!textarea) {
-		throw new Error("Composer textarea not found");
+		throw new Error(t("contentComposerNotFound"));
 	}
 
 	const start = textarea.selectionStart ?? textarea.value.length;
@@ -1402,7 +1413,7 @@ function insertPrompt(text) {
 	}
 
 	resizeComposer(textarea);
-	showToast("Prompt inserted");
+	showToast(t("contentToastPromptInserted"));
 }
 
 function sleep(ms) {
@@ -1504,7 +1515,7 @@ async function waitForSendButton(timeoutMs = 8000) {
 async function clickSendButton() {
 	const button = await waitForSendButton();
 	if (!button) {
-		throw new Error("Send button did not become enabled in time");
+		throw new Error(t("contentSendButtonTimeout"));
 	}
 
 	button.click();
@@ -1571,17 +1582,17 @@ async function insertPendingPrompt() {
 				clearPendingPrompt();
 
 				if (autoSend) {
-					showToast("Article inserted, sending…");
+					showToast(t("contentToastArticleSending"));
 					await sleep(150);
 
 					try {
 						await clickSendButton();
-						showToast("Article sent to AI");
+						showToast(t("contentToastArticleSent"));
 					} catch (_sendError) {
-						showToast("Prompt inserted. Click Send manually.");
+						showToast(t("contentToastArticleManual"));
 					}
 				} else {
-					showToast("Prompt inserted");
+					showToast(t("contentToastPromptInserted"));
 				}
 
 				return;
@@ -1806,12 +1817,12 @@ function updateCodeToggle(block) {
 	const lines = countCodeLines(block);
 	const lang = getCodeLanguage(block);
 
-	const label = expanded ? "Hide" : lines ? `Show · ${lines}` : "Show";
+	const label = expanded ? t("contentCodeHide") : lines ? t("contentCodeShow", [String(lines)]) : t("contentCodeShowNoCount");
 	if (button.textContent !== label) {
 		button.textContent = label;
 	}
 
-	const title = expanded ? `Hide ${lang}` : `Show ${lang}`;
+	const title = expanded ? t("contentCodeHideTitle", [lang]) : t("contentCodeShowTitle", [lang]);
 	if (button.title !== title) {
 		button.title = title;
 	}
@@ -1993,9 +2004,9 @@ function updateBookmarkButton() {
 	button.hidden = false;
 	button.dataset.active = active ? "true" : "false";
 	button.textContent = active ? "★" : "☆";
-	button.title = active ? "Remove bookmark" : "Bookmark this chat";
+	button.title = active ? t("contentBookmarkRemove") : t("contentBookmarkAdd");
 	button.setAttribute("aria-pressed", active ? "true" : "false");
-	button.setAttribute("aria-label", active ? "Remove bookmark" : "Bookmark this chat");
+	button.setAttribute("aria-label", active ? t("contentBookmarkRemove") : t("contentBookmarkAdd"));
 }
 
 async function refreshBookmarkCache() {
@@ -2011,7 +2022,7 @@ async function refreshBookmarkCache() {
 
 async function toggleCurrentBookmark() {
 	if (!isExistingChatPage()) {
-		showToast("Open a chat to bookmark it");
+		showToast(t("contentBookmarkNeedChat"));
 		return;
 	}
 
@@ -2029,7 +2040,7 @@ async function toggleCurrentBookmark() {
 	await setBookmarks(next);
 	await refreshBookmarkCache();
 
-	showToast(exists ? "Bookmark removed" : `Bookmarked: ${title}`);
+	showToast(exists ? t("contentBookmarkRemoved") : t("contentBookmarkAdded", [title]));
 }
 
 // ---------------------------------------------------------------------------
@@ -2307,7 +2318,8 @@ function updateActiveItem(options = {}) {
 
 	els.count.textContent = label;
 	if (els.pos) {
-		els.pos.textContent = total === 0 ? "No messages" : `Message ${index >= 0 ? index + 1 : "–"} of ${total}`;
+		els.pos.textContent =
+			total === 0 ? t("contentPanelMessagesNoMessages") : t("contentPanelMessagesPosition", [String(index >= 0 ? index + 1 : "–"), String(total)]);
 	}
 	if (els.prev) {
 		els.prev.disabled = total === 0 || index <= 0;
@@ -2475,7 +2487,7 @@ function createPanelRow(root, role, index) {
 
 	const roleEl = document.createElement("span");
 	roleEl.className = `role ${role}`;
-	roleEl.textContent = role === "user" ? "You" : "AI";
+	roleEl.textContent = role === "user" ? t("contentPanelRoleUser") : t("contentPanelRoleAI");
 
 	const previewEl = document.createElement("span");
 	previewEl.className = "preview";
@@ -2500,7 +2512,7 @@ function renderEmptyPanelList(list) {
 
 	const empty = document.createElement("div");
 	empty.className = "empty";
-	empty.textContent = "Open a Direct chat to see messages.";
+	empty.textContent = t("contentPanelMessagesEmpty");
 	list.appendChild(empty);
 }
 
@@ -2550,7 +2562,7 @@ function renderPanelList() {
 			row.root = root;
 			row.role = role;
 			row.roleEl.className = `role ${role}`;
-			row.roleEl.textContent = role === "user" ? "You" : "AI";
+			row.roleEl.textContent = role === "user" ? t("contentPanelRoleUser") : t("contentPanelRoleAI");
 		}
 
 		usedButtons.add(row.button);
@@ -2609,8 +2621,8 @@ function ensurePanel() {
 		<style>${PANEL_CSS}</style>
 		<div class="panel" data-collapsed="${panelCollapsed ? "true" : "false"}">
 			<div class="panel-head">
-				<button class="toggle" type="button" title="Toggle message navigation">
-					<span class="title">Messages</span>
+				<button class="toggle" type="button" title="${t("contentPanelMessagesToggle")}">
+					<span class="title">${t("contentPanelMessagesTitle")}</span>
 					<span class="count">0</span>
 					<span class="chevron">${panelCollapsed ? "▾" : "▴"}</span>
 				</button>
@@ -2618,13 +2630,13 @@ function ensurePanel() {
 			</div>
 			<div class="body">
 				<div class="nav">
-					<button class="nav-btn" type="button" data-dir="-1" title="Previous message (↑)">↑</button>
+					<button class="nav-btn" type="button" data-dir="-1" title="${t("contentPanelMessagesPrev")}">↑</button>
 					<span class="pos">–/–</span>
-					<button class="nav-btn" type="button" data-dir="1" title="Next message (↓)">↓</button>
-					<button class="nav-btn" type="button" data-bottom title="Scroll to bottom">⤓</button>
+					<button class="nav-btn" type="button" data-dir="1" title="${t("contentPanelMessagesNext")}">↓</button>
+					<button class="nav-btn" type="button" data-bottom title="${t("contentPanelMessagesBottom")}">⤓</button>
 				</div>
 				<div class="list"></div>
-				<div class="hint">↑ / ↓ jump between messages</div>
+				<div class="hint">${t("contentPanelMessagesHint")}</div>
 			</div>
 		</div>
 	`;
@@ -2719,7 +2731,7 @@ function renderNewChatList() {
 	if (!Array.isArray(chatTemplates) || chatTemplates.length === 0) {
 		const empty = document.createElement("div");
 		empty.className = "empty";
-		empty.textContent = "No templates yet. Add some in Options.";
+		empty.textContent = t("contentPanelNewChatEmpty");
 		els.templates.appendChild(empty);
 		return;
 	}
@@ -2751,13 +2763,13 @@ function ensureNewChatPanel() {
 	shadow.innerHTML = `
 		<style>${NEW_CHAT_CSS}</style>
 		<div class="panel" data-collapsed="${newChatCollapsed ? "true" : "false"}">
-			<button class="toggle" type="button" title="Toggle new chat templates">
-				<span class="title">New chat</span>
+			<button class="toggle" type="button" title="${t("contentPanelNewChatToggle")}">
+				<span class="title">${t("contentPanelNewChatTitle")}</span>
 				<span class="chevron">${newChatCollapsed ? "▾" : "▴"}</span>
 			</button>
 			<div class="body">
 				<div class="templates"></div>
-				<button class="edit" type="button">Edit templates</button>
+				<button class="edit" type="button">${t("contentPanelNewChatEdit")}</button>
 			</div>
 		</div>
 	`;
@@ -2852,7 +2864,7 @@ function renderPromptsList() {
 	if (!Array.isArray(prompts) || prompts.length === 0) {
 		const empty = document.createElement("div");
 		empty.className = "empty";
-		empty.textContent = "No prompts yet. Add them in Options.";
+		empty.textContent = t("contentPanelPromptsEmpty");
 		els.list.appendChild(empty);
 		return;
 	}
@@ -2875,7 +2887,7 @@ function renderPromptsList() {
 			try {
 				insertPrompt(String(prompt?.text || ""));
 			} catch (error) {
-				showToast(`Error: ${error instanceof Error ? error.message : String(error)}`);
+				showToast(t("contentToastError", [error instanceof Error ? error.message : String(error)]));
 			}
 		});
 
@@ -2897,13 +2909,13 @@ function ensurePromptsPanel() {
 	shadow.innerHTML = `
 		<style>${PROMPTS_CSS}</style>
 		<div class="panel" data-collapsed="${promptsCollapsed ? "true" : "false"}">
-			<button class="toggle" type="button" title="Toggle prompt snippets">
-				<span class="title">Prompts</span>
+			<button class="toggle" type="button" title="${t("contentPanelPromptsToggle")}">
+				<span class="title">${t("contentPanelPromptsTitle")}</span>
 				<span class="chevron">${promptsCollapsed ? "▾" : "▴"}</span>
 			</button>
 			<div class="body">
 				<div class="prompts-list"></div>
-				<button class="edit" type="button">Edit prompts</button>
+				<button class="edit" type="button">${t("contentPanelPromptsEdit")}</button>
 			</div>
 		</div>
 	`;
@@ -2982,16 +2994,17 @@ function updateCodebaseFolderLabel() {
 		els.folderName.textContent = codebaseDirHandle.name;
 		els.folderName.classList.remove("muted");
 	} else {
-		els.folderName.textContent = "No folder selected";
+		els.folderName.textContent = t("contentPanelCodebaseNoFolder");
 		els.folderName.classList.add("muted");
 	}
 
 	if (els.generateBtn) {
 		els.generateBtn.hidden = !codebaseDirHandle;
+		els.generateBtn.textContent = t("contentPanelCodebaseRebuild");
 	}
 
 	if (els.pickBtn) {
-		els.pickBtn.textContent = codebaseDirHandle ? "Change…" : "Select…";
+		els.pickBtn.textContent = codebaseDirHandle ? t("contentPanelCodebaseChange") : t("contentPanelCodebaseSelect");
 	}
 }
 
@@ -3021,7 +3034,7 @@ async function generateCodebaseSnapshot() {
 
 	codebaseGenerating = true;
 	updateCodebaseButtonsDisabled(true);
-	updateCodebaseProgress("Scanning folder…");
+	updateCodebaseProgress(t("contentPanelCodebaseScanning"));
 
 	try {
 		const options = await readCodebaseSettings();
@@ -3034,7 +3047,7 @@ async function generateCodebaseSnapshot() {
 		console.error("[arena-utils] Codebase snapshot failed:", error);
 		const message = error instanceof Error ? error.message : String(error);
 		updateCodebaseProgress(`Error: ${message}`);
-		showToast(`Codebase: ${message}`);
+		showToast(t("contentPanelCodebaseError", [message]));
 	} finally {
 		codebaseGenerating = false;
 		updateCodebaseFolderLabel();
@@ -3048,7 +3061,7 @@ async function pickCodebaseFolder() {
 	}
 
 	if (typeof window.showDirectoryPicker !== "function") {
-		showToast("Folder picker is not available here. Open Codebase settings.");
+		showToast(t("contentPanelCodebasePickerUnavailable"));
 		void chrome.runtime.sendMessage({ type: "ARENA_OPEN_OPTIONS", hash: "#codebase" });
 		return;
 	}
@@ -3062,7 +3075,7 @@ async function pickCodebaseFolder() {
 			return;
 		}
 
-		showToast(`Codebase: ${error instanceof Error ? error.message : String(error)}`);
+		showToast(t("contentPanelCodebaseError", [error instanceof Error ? error.message : String(error)]));
 		return;
 	}
 
@@ -3128,7 +3141,7 @@ function insertCodebaseChunk(index) {
 
 	// Заголовок помогает и модели, и человеку понять, что перед ними
 	// фрагмент n из N — части склеиваются по порядку имени.
-	const header = `Фрагмент ${index + 1}/${total}\n\n`;
+	const header = `${t("contentFragmentHeader", [String(index + 1), String(total)])}\n\n`;
 	insertPrompt(header + chunk.text);
 }
 
@@ -3150,9 +3163,9 @@ function renderCodebaseList() {
 		empty.className = "empty";
 
 		if (!codebaseDirHandle) {
-			empty.textContent = "Pick a folder to build the fragment list. The list lives only in this tab.";
+			empty.textContent = t("contentPanelCodebaseEmptyNoFolder");
 		} else {
-			empty.textContent = "No fragments. Click Rebuild to regenerate.";
+			empty.textContent = t("contentPanelCodebaseEmptyNoFragments");
 		}
 
 		els.list.replaceChildren(empty);
@@ -3169,7 +3182,7 @@ function renderCodebaseList() {
 		const button = document.createElement("button");
 		button.type = "button";
 		button.className = "chunk-item";
-		button.title = `Insert ${name} · Фрагмент ${i + 1}/${total}`;
+		button.title = `${name} · ${t("contentFragmentHeader", [String(i + 1), String(total)])}`;
 
 		const nameEl = document.createElement("span");
 		nameEl.className = "chunk-item-name";
@@ -3177,7 +3190,7 @@ function renderCodebaseList() {
 
 		const metaEl = document.createElement("span");
 		metaEl.className = "chunk-item-meta";
-		metaEl.textContent = `Фрагмент ${i + 1}/${total} · ${chars.toLocaleString()} chars`;
+		metaEl.textContent = `${t("contentFragmentHeader", [String(i + 1), String(total)])} · ${chars.toLocaleString()} chars`;
 
 		button.append(nameEl, metaEl);
 
@@ -3186,7 +3199,7 @@ function renderCodebaseList() {
 			try {
 				insertCodebaseChunk(index);
 			} catch (error) {
-				showToast(`Error: ${error instanceof Error ? error.message : String(error)}`);
+				showToast(t("contentToastError", [error instanceof Error ? error.message : String(error)]));
 			}
 		});
 
@@ -3210,20 +3223,20 @@ function ensureCodebasePanel() {
 	shadow.innerHTML = `
 		<style>${CODEBASE_CSS}</style>
 		<div class="panel" data-collapsed="${codebaseCollapsed ? "true" : "false"}">
-			<button class="toggle" type="button" title="Toggle codebase fragments">
-				<span class="title">Codebase</span>
+			<button class="toggle" type="button" title="${t("contentPanelCodebaseToggle")}">
+				<span class="title">${t("contentPanelCodebaseTitle")}</span>
 				<span class="count">0</span>
 				<span class="chevron">${codebaseCollapsed ? "▾" : "▴"}</span>
 			</button>
 			<div class="body">
 				<div class="folder-row">
-					<span class="folder-name muted">No folder selected</span>
-					<button class="folder-btn" type="button" data-action="generate" hidden>Rebuild</button>
-					<button class="folder-btn" type="button" data-action="pick">Select…</button>
+					<span class="folder-name muted">${t("contentPanelCodebaseNoFolder")}</span>
+					<button class="folder-btn" type="button" data-action="generate" hidden>${t("contentPanelCodebaseRebuild")}</button>
+					<button class="folder-btn" type="button" data-action="pick">${t("contentPanelCodebaseSelect")}</button>
 				</div>
 				<div class="status"></div>
 				<div class="chunk-list"></div>
-				<button class="edit" type="button">Codebase settings</button>
+				<button class="edit" type="button">${t("contentPanelCodebaseSettings")}</button>
 			</div>
 		</div>
 	`;

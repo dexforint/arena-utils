@@ -1,0 +1,233 @@
+{
+	"extName": { "message": "Arena Utils" },
+	"extDescription": { "message": "Экспорт чатов arena.ai, вставка заготовок, отключение автоскролла, навигация по сообщениям и другое." },
+	"languageCode": { "message": "ru" },
+
+	"popupStatusChecking": { "message": "Проверка страницы…" },
+	"popupOpenArenaFirst": { "message": "Сначала откройте вкладку arena.ai" },
+	"popupOpenTemplateFirst": { "message": "Откройте шаблон, чтобы начать чат" },
+	"popupReloadTab": { "message": "Перезагрузите вкладку arena.ai после обновления расширения" },
+	"popupMessagesCount": {
+		"message": "$count$ сообщений на странице",
+		"placeholders": { "count": { "content": "$1" } }
+	},
+
+	"popupAutoscrollLabel": { "message": "Отключить автоскролл после ответов ИИ" },
+	"popupCollapseCodeLabel": { "message": "Сворачивать блоки кода в ответах ИИ" },
+
+	"popupArticleTitle": { "message": "Статья" },
+	"popupArticleChecking": { "message": "Проверка страницы…" },
+	"popupArticleNone": { "message": "На этой странице нет &lt;article&gt;" },
+	"popupArticleCount": {
+		"message": "$count$ · ~$chars$ символов",
+		"placeholders": {
+			"count": { "content": "$1" },
+			"chars": { "content": "$2" }
+		}
+	},
+	"popupArticleButton": { "message": "Объяснить статью" },
+	"popupArticleExtracting": { "message": "Извлечение статьи…" },
+	"popupArticleNoTarget": { "message": "Нет целевой вкладки" },
+
+	"popupVideoTitle": { "message": "Видео" },
+	"popupVideoChecking": { "message": "Проверка видео…" },
+	"popupVideoNone": { "message": "Для этого видео нет субтитров" },
+	"popupVideoTracks": {
+		"message": "$count$ дорожек$langs$",
+		"placeholders": {
+			"count": { "content": "$1" },
+			"langs": { "content": "$2" }
+		}
+	},
+	"popupVideoButton": { "message": "Объяснить видео" },
+	"popupVideoExtracting": { "message": "Извлечение субтитров…" },
+	"popupVideoNoTarget": { "message": "Нет целевой вкладки" },
+
+	"popupExportButton": { "message": "Экспорт чата" },
+	"popupExporting": { "message": "Экспортирую…" },
+	"popupExportFailed": { "message": "Экспорт не удался" },
+
+	"popupNewChatTitle": { "message": "Новый чат" },
+	"popupNewChatEdit": { "message": "Изменить" },
+	"popupNewChatEmpty": { "message": "Шаблонов пока нет. Откройте «Изменить»." },
+
+	"popupBookmarksTitle": { "message": "Закладки" },
+	"popupBookmarksEmpty": { "message": "Закладок пока нет. Откройте чат и нажмите ☆." },
+	"popupBookmarkOpen": {
+		"message": "Открыть чат $title$",
+		"placeholders": { "title": { "content": "$1" } }
+	},
+	"popupBookmarkRemove": { "message": "Удалить закладку" },
+	"popupBookmarkNoUrl": { "message": "У закладки нет URL" },
+	"popupBookmarkUntitled": { "message": "Без названия" },
+
+	"popupDebugTitle": { "message": "Отладка" },
+	"popupPerfEnable": { "message": "Включить профилирование" },
+	"popupPerfEnabledStatus": { "message": "Профилирование включено. Перезагрузите вкладку arena.ai." },
+	"popupPerfDisabledStatus": { "message": "Профилирование выключено." },
+	"popupPerfDumpButton": { "message": "Отчёт" },
+	"popupPerfResetButton": { "message": "Сброс" },
+	"popupPerfDumpDone": {
+		"message": "Выгружено $count$ записей в консоль страницы (F12)",
+		"placeholders": { "count": { "content": "$1" } }
+	},
+	"popupPerfResetDone": { "message": "Счётчики профилирования сброшены" },
+	"popupPerfDumpFailed": { "message": "Не удалось выгрузить отчёт" },
+
+	"optionsPageTitle": { "message": "Arena Utils — Настройки" },
+	"optionsChatHeader": { "message": "Чат" },
+	"optionsChatDescription": { "message": "Применяется на страницах переписки arena.ai." },
+	"optionsCodeCollapseLabel": { "message": "Сворачивать блоки кода в ответах ИИ по умолчанию" },
+
+	"optionsTemplatesHeader": { "message": "Новый чат" },
+	"optionsTemplatesDescription": {
+		"message": "Эти шаблоны станут кнопками в верхней левой панели. Клик открывает соответствующий режим и может заполнить поле ввода."
+	},
+	"optionsAddTemplateButton": { "message": "Добавить шаблон" },
+	"optionsTemplatesEmpty": { "message": "Шаблонов пока нет. Добавьте один — он появится в панели «Новый чат»." },
+
+	"optionsArticleHeader": { "message": "Статья" },
+	"optionsArticleDescription": {
+		"message": "Кнопка «Объяснить статью» в попапе отправляет самый крупный &lt;article&gt; со страницы в arena.ai с этим шаблоном. Плейсхолдеры: {article}, {title}, {url}."
+	},
+	"optionsVideoHeader": { "message": "Видео" },
+	"optionsVideoDescription": {
+		"message": "Кнопка «Объяснить видео» в попапе отправляет субтитры YouTube в arena.ai с этим шаблоном. Плейсхолдеры: {subtitles}, {title}, {url}. Субтитры идут с таймкодами, например [05:23]."
+	},
+
+	"optionsModelLabel": { "message": "Модель для нового чата" },
+	"optionsPromptTemplateLabel": { "message": "Шаблон промпта" },
+	"optionsResetButton": { "message": "Сбросить к стандартному" },
+
+	"optionsPromptsHeader": { "message": "Промпты" },
+	"optionsPromptsDescription": { "message": "Они появятся как панель «Prompts» на страницах arena.ai. Клик вставит текст в поле ввода." },
+	"optionsAddPromptButton": { "message": "Добавить промпт" },
+	"optionsPromptsEmpty": { "message": "Промптов пока нет. Добавьте один — он появится в попапе." },
+
+	"optionsCodebaseHeader": { "message": "Кодовая база" },
+	"optionsCodebaseDescription": {
+		"message": "Правила сборки снапшота для панели «Codebase». Сама папка выбирается на странице arena.ai; эти настройки применяются при нажатии Rebuild в панели."
+	},
+	"optionsMaxCharsLabel": { "message": "Максимум символов на чанк" },
+	"optionsUseGitignoreLabel": { "message": "Учитывать корневой .gitignore папки" },
+	"optionsFullExcludeLabel": { "message": "Full exclude (синтаксис gitignore)" },
+	"optionsContentExcludeLabel": { "message": "Content exclude — оставить в дереве, но не читать содержимое" },
+	"optionsCodebaseSaved": { "message": "Сохранено." },
+
+	"optionsNamePlaceholder": { "message": "Название" },
+	"optionsPromptTextPlaceholder": { "message": "Текст промпта" },
+	"optionsTemplateNamePlaceholder": { "message": "Название кнопки" },
+	"optionsTemplatePromptPlaceholder": { "message": "Оставьте пустым, чтобы открыть пустой композер" },
+	"optionsChatTypeLabel": { "message": "Тип чата" },
+	"optionsCategoryLabel": { "message": "Категория" },
+	"optionsModelALabel": { "message": "Модель A" },
+	"optionsModelBLabel": { "message": "Модель B" },
+	"optionsInitialPromptLabel": { "message": "Начальный промпт (необязательно)" },
+	"optionsDeleteButton": { "message": "Удалить" },
+	"optionsNewPromptName": { "message": "Новый промпт" },
+	"optionsNewTemplateName": { "message": "Новый шаблон" },
+
+	"contentPanelMessagesTitle": { "message": "Messages" },
+	"contentPanelMessagesEmpty": { "message": "Откройте Direct-чат, чтобы увидеть сообщения." },
+	"contentPanelMessagesHint": { "message": "↑ / ↓ переход между сообщениями" },
+	"contentPanelMessagesNoMessages": { "message": "Нет сообщений" },
+	"contentPanelMessagesPosition": {
+		"message": "Сообщение $index$ из $total$",
+		"placeholders": {
+			"index": { "content": "$1" },
+			"total": { "content": "$2" }
+		}
+	},
+	"contentPanelMessagesToggle": { "message": "Переключить навигацию по сообщениям" },
+	"contentPanelMessagesPrev": { "message": "Предыдущее сообщение (↑)" },
+	"contentPanelMessagesNext": { "message": "Следующее сообщение (↓)" },
+	"contentPanelMessagesBottom": { "message": "Прокрутить вниз" },
+	"contentPanelRoleUser": { "message": "Вы" },
+	"contentPanelRoleAI": { "message": "ИИ" },
+
+	"contentBookmarkAdd": { "message": "Добавить чат в закладки" },
+	"contentBookmarkRemove": { "message": "Удалить закладку" },
+	"contentBookmarkNeedChat": { "message": "Откройте чат, чтобы добавить в закладки" },
+	"contentBookmarkAdded": {
+		"message": "В закладках: $title$",
+		"placeholders": { "title": { "content": "$1" } }
+	},
+	"contentBookmarkRemoved": { "message": "Закладка удалена" },
+
+	"contentPanelNewChatTitle": { "message": "Новый чат" },
+	"contentPanelNewChatToggle": { "message": "Переключить шаблоны нового чата" },
+	"contentPanelNewChatEmpty": { "message": "Шаблонов пока нет. Добавьте в настройках." },
+	"contentPanelNewChatEdit": { "message": "Изменить шаблоны" },
+
+	"contentPanelPromptsTitle": { "message": "Промпты" },
+	"contentPanelPromptsToggle": { "message": "Переключить список промптов" },
+	"contentPanelPromptsEmpty": { "message": "Промптов пока нет. Добавьте в настройках." },
+	"contentPanelPromptsEdit": { "message": "Изменить промпты" },
+
+	"contentPanelCodebaseTitle": { "message": "Codebase" },
+	"contentPanelCodebaseToggle": { "message": "Переключить фрагменты кодовой базы" },
+	"contentPanelCodebaseSettings": { "message": "Настройки Codebase" },
+	"contentPanelCodebaseNoFolder": { "message": "Папка не выбрана" },
+	"contentPanelCodebaseSelect": { "message": "Выбрать…" },
+	"contentPanelCodebaseChange": { "message": "Сменить…" },
+	"contentPanelCodebaseRebuild": { "message": "Пересобрать" },
+	"contentPanelCodebaseScanning": { "message": "Сканирование папки…" },
+	"contentPanelCodebaseEmptyNoFolder": { "message": "Выберите папку, чтобы построить список фрагментов. Список живёт только в этой вкладке." },
+	"contentPanelCodebaseEmptyNoFragments": { "message": "Фрагментов нет. Нажмите «Пересобрать»." },
+	"contentPanelCodebasePickerUnavailable": { "message": "Системный выбор папки здесь недоступен. Откройте настройки Codebase." },
+	"contentPanelCodebaseError": {
+		"message": "Codebase: $error$",
+		"placeholders": { "error": { "content": "$1" } }
+	},
+
+	"contentFragmentHeader": {
+		"message": "Фрагмент $index$/$total$",
+		"placeholders": {
+			"index": { "content": "$1" },
+			"total": { "content": "$2" }
+		}
+	},
+
+	"contentCodeShow": {
+		"message": "Показать · $lines$",
+		"placeholders": { "lines": { "content": "$1" } }
+	},
+	"contentCodeShowNoCount": { "message": "Показать" },
+	"contentCodeHide": { "message": "Скрыть" },
+	"contentCodeShowTitle": {
+		"message": "Показать $lang$",
+		"placeholders": { "lang": { "content": "$1" } }
+	},
+	"contentCodeHideTitle": {
+		"message": "Скрыть $lang$",
+		"placeholders": { "lang": { "content": "$1" } }
+	},
+
+	"contentComposerNotFound": { "message": "Поле ввода не найдено" },
+	"contentSendButtonTimeout": { "message": "Кнопка Send так и не стала активной" },
+
+	"contentErrorNoMessages": { "message": "Не удалось найти сообщения" },
+	"contentErrorNoMarkdown": {
+		"message": "Markdown для сообщения $n$ не найден",
+		"placeholders": { "n": { "content": "$1" } }
+	},
+	"contentErrorDownloadFailed": { "message": "Не удалось скачать файлы" },
+
+	"contentToastExportAlready": { "message": "Экспорт уже выполняется" },
+	"contentToastExporting": {
+		"message": "Экспортирую $count$ сообщений…",
+		"placeholders": { "count": { "content": "$1" } }
+	},
+	"contentToastExportDone": {
+		"message": "Готово: $count$ файлов",
+		"placeholders": { "count": { "content": "$1" } }
+	},
+	"contentToastError": {
+		"message": "Ошибка: $message$",
+		"placeholders": { "message": { "content": "$1" } }
+	},
+	"contentToastPromptInserted": { "message": "Промпт вставлен" },
+	"contentToastArticleSending": { "message": "Статья вставлена, отправляю…" },
+	"contentToastArticleSent": { "message": "Статья отправлена ИИ" },
+	"contentToastArticleManual": { "message": "Промпт вставлен. Нажмите Send вручную." }
+}

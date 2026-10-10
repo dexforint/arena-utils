@@ -265,11 +265,9 @@ section {
 	font: inherit;
 	font-weight: 650;
 	cursor: pointer;
-	transition: background 0.15s ease;
+	transition: opacity 0.15s ease;
 }
 
-/* Было: hover ставил тот же background, что и база — визуально ничего
-   не менялось. Теперь только opacity, как у #explain-video. */
 #explain-article:hover:not(:disabled) {
 	opacity: 0.9;
 }
@@ -293,7 +291,7 @@ section {
 	font: inherit;
 	font-weight: 650;
 	cursor: pointer;
-	transition: background 0.15s ease;
+	transition: opacity 0.15s ease;
 }
 
 #explain-video:hover:not(:disabled) {

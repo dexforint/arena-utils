@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="utf-8" />
-    <title>Arena Utils — Settings</title>
+    <title data-i18n="optionsPageTitle">Arena Utils — Settings</title>
     <link rel="stylesheet" href="options.css" />
 </head>
 
@@ -12,14 +12,14 @@
         <section class="chat-settings">
             <header class="page-header">
                 <div>
-                    <h1>Chat</h1>
-                    <p>These apply on arena.ai conversation pages.</p>
+                    <h1 data-i18n="optionsChatHeader">Chat</h1>
+                    <p data-i18n="optionsChatDescription">These apply on arena.ai conversation pages.</p>
                 </div>
             </header>
             <div class="card">
                 <label class="check">
                     <input id="collapse-code" type="checkbox" />
-                    <span>Collapse code blocks in AI replies by default</span>
+                    <span data-i18n="optionsCodeCollapseLabel">Collapse code blocks in AI replies by default</span>
                 </label>
             </div>
         </section>
@@ -27,12 +27,12 @@
         <section id="chat-templates" class="chat-templates">
             <header class="page-header">
                 <div>
-                    <h1>New chat</h1>
-                    <p>
+                    <h1 data-i18n="optionsTemplatesHeader">New chat</h1>
+                    <p data-i18n="optionsTemplatesDescription">
                         These become buttons in the top-left panel. A click opens that mode and can fill the composer.
                     </p>
                 </div>
-                <button id="add-template" type="button">Add template</button>
+                <button id="add-template" type="button" data-i18n="optionsAddTemplateButton">Add template</button>
             </header>
             <div id="template-list"></div>
         </section>
@@ -40,8 +40,8 @@
         <section id="article" class="chat-templates">
             <header class="page-header">
                 <div>
-                    <h1>Article</h1>
-                    <p>
+                    <h1 data-i18n="optionsArticleHeader">Article</h1>
+                    <p data-i18n="optionsArticleDescription">
                         The popup's "Explain article" button sends the largest &lt;article&gt; on the page to arena.ai
                         using this template. Placeholders: <code>{article}</code>, <code>{title}</code>,
                         <code>{url}</code>.
@@ -50,15 +50,16 @@
             </header>
             <div class="card settings-card">
                 <label class="field">
-                    <span>Model for the new chat</span>
+                    <span data-i18n="optionsModelLabel">Model for the new chat</span>
                     <input id="article-model" type="text" placeholder="gemini-3.8-flash-high" spellcheck="false" />
                 </label>
                 <label class="field">
-                    <span>Prompt template</span>
+                    <span data-i18n="optionsPromptTemplateLabel">Prompt template</span>
                     <textarea id="article-template" spellcheck="false"></textarea>
                 </label>
                 <div class="row wrap">
-                    <button id="reset-article-template" type="button">Reset to default</button>
+                    <button id="reset-article-template" type="button" data-i18n="optionsResetButton">Reset to
+                        default</button>
                 </div>
             </div>
         </section>
@@ -66,8 +67,8 @@
         <section id="video" class="chat-templates">
             <header class="page-header">
                 <div>
-                    <h1>Video</h1>
-                    <p>
+                    <h1 data-i18n="optionsVideoHeader">Video</h1>
+                    <p data-i18n="optionsVideoDescription">
                         The popup's "Explain video" button sends YouTube subtitles to arena.ai using this template.
                         Placeholders: <code>{subtitles}</code>, <code>{title}</code>, <code>{url}</code>.
                         Subtitles come with timestamps like <code>[05:23]</code>.
@@ -76,15 +77,16 @@
             </header>
             <div class="card settings-card">
                 <label class="field">
-                    <span>Model for the new chat</span>
+                    <span data-i18n="optionsModelLabel">Model for the new chat</span>
                     <input id="video-model" type="text" placeholder="gemini-3.8-flash-high" spellcheck="false" />
                 </label>
                 <label class="field">
-                    <span>Prompt template</span>
+                    <span data-i18n="optionsPromptTemplateLabel">Prompt template</span>
                     <textarea id="video-template" spellcheck="false"></textarea>
                 </label>
                 <div class="row wrap">
-                    <button id="reset-video-template" type="button">Reset to default</button>
+                    <button id="reset-video-template" type="button" data-i18n="optionsResetButton">Reset to
+                        default</button>
                 </div>
             </div>
         </section>
@@ -92,11 +94,13 @@
         <section id="prompts" class="chat-templates">
             <header class="page-header">
                 <div>
-                    <h1>Prompts</h1>
-                    <p>These appear as the <strong>Prompts</strong> panel on arena.ai pages. Clicking one inserts it
-                        into the composer.</p>
+                    <h1 data-i18n="optionsPromptsHeader">Prompts</h1>
+                    <p data-i18n="optionsPromptsDescription">
+                        These appear as the <strong>Prompts</strong> panel on arena.ai pages. Clicking one inserts it
+                        into the composer.
+                    </p>
                 </div>
-                <button id="add" type="button">Add prompt</button>
+                <button id="add" type="button" data-i18n="optionsAddPromptButton">Add prompt</button>
             </header>
             <div id="list"></div>
         </section>
@@ -104,53 +108,41 @@
         <section id="codebase" class="codebase">
             <header class="page-header">
                 <div>
-                    <h1>Codebase prompts</h1>
-                    <p>
-                        Chrome cannot read a typed filesystem path. Choose a folder and generate chunks.
-                        The chunks then appear in the <strong>Codebase</strong> panel on arena.ai pages
-                        (bottom of the left column). Each inserted fragment gets a <code>Фрагмент n/N</code> header.
-                        This is the JS port of the Python snapshot script.
+                    <h1 data-i18n="optionsCodebaseHeader">Codebase</h1>
+                    <p data-i18n="optionsCodebaseDescription">
+                        Snapshot rules for the Codebase panel. The folder itself is picked on the arena.ai page —
+                        these settings apply when you press Rebuild there.
                     </p>
                 </div>
             </header>
 
             <div class="card settings-card">
-                <div class="row wrap">
-                    <button id="pick-folder" type="button">Select folder</button>
-                    <button id="restore-access" type="button" hidden>Restore access</button>
-                    <span id="folder-name" class="muted">No folder selected</span>
-                </div>
-
                 <label class="field">
-                    <span>Max characters per chunk</span>
+                    <span data-i18n="optionsMaxCharsLabel">Max characters per chunk</span>
                     <input id="max-chars" type="number" min="0" step="1000" />
                 </label>
 
                 <label class="check">
                     <input id="use-gitignore" type="checkbox" />
-                    <span>Also apply the folder’s root .gitignore</span>
+                    <span data-i18n="optionsUseGitignoreLabel">Also apply the folder’s root .gitignore</span>
                 </label>
 
                 <label class="field">
-                    <span>Full exclude (gitignore syntax)</span>
+                    <span data-i18n="optionsFullExcludeLabel">Full exclude (gitignore syntax)</span>
                     <textarea id="exclude" spellcheck="false"></textarea>
                 </label>
 
                 <label class="field">
-                    <span>Content exclude — keep in the tree, skip file bodies</span>
+                    <span data-i18n="optionsContentExcludeLabel">Content exclude — keep in the tree, skip file
+                        bodies</span>
                     <textarea id="content-exclude" spellcheck="false"></textarea>
                 </label>
 
-                <div class="row wrap">
-                    <button id="generate" type="button">Generate prompts</button>
-                    <button id="clear-codebase" class="delete" type="button">Clear generated</button>
-                </div>
-
-                <pre id="codebase-status" class="status"></pre>
-                <div id="chunk-list"></div>
+                <p class="status" id="codebase-status"></p>
             </div>
         </section>
     </main>
+    <script src="i18n.js"></script>
     <script src="shared.js"></script>
     <script src="chatTemplates.js"></script>
     <script src="codebase.js"></script>

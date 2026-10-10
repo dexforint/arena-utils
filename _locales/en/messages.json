@@ -1,0 +1,231 @@
+{
+	"extName": { "message": "Arena Utils" },
+	"extDescription": { "message": "Export arena.ai chats, insert prompts, disable autoscroll, navigate messages, and more." },
+	"languageCode": { "message": "en" },
+
+	"popupStatusChecking": { "message": "Checking page…" },
+	"popupOpenArenaFirst": { "message": "Open an arena.ai tab first" },
+	"popupOpenTemplateFirst": { "message": "Open a template to start a chat" },
+	"popupReloadTab": { "message": "Reload the arena.ai tab after updating the extension" },
+	"popupMessagesCount": {
+		"message": "$count$ messages on this page",
+		"placeholders": { "count": { "content": "$1" } }
+	},
+
+	"popupAutoscrollLabel": { "message": "Disable autoscroll after AI replies" },
+	"popupCollapseCodeLabel": { "message": "Collapse code blocks in AI replies" },
+
+	"popupArticleTitle": { "message": "Article" },
+	"popupArticleChecking": { "message": "Checking page…" },
+	"popupArticleNone": { "message": "No <article> element on this page" },
+	"popupArticleCount": {
+		"message": "$count$ · ~$chars$ characters",
+		"placeholders": {
+			"count": { "content": "$1" },
+			"chars": { "content": "$2" }
+		}
+	},
+	"popupArticleButton": { "message": "Explain article" },
+	"popupArticleExtracting": { "message": "Extracting article…" },
+	"popupArticleNoTarget": { "message": "No target tab" },
+
+	"popupVideoTitle": { "message": "Video" },
+	"popupVideoChecking": { "message": "Checking video…" },
+	"popupVideoNone": { "message": "No subtitles available for this video" },
+	"popupVideoTracks": {
+		"message": "$count$ tracks$langs$",
+		"placeholders": {
+			"count": { "content": "$1" },
+			"langs": { "content": "$2" }
+		}
+	},
+	"popupVideoButton": { "message": "Explain video" },
+	"popupVideoExtracting": { "message": "Extracting subtitles…" },
+	"popupVideoNoTarget": { "message": "No target tab" },
+
+	"popupExportButton": { "message": "Export chat" },
+	"popupExporting": { "message": "Exporting…" },
+	"popupExportFailed": { "message": "Export failed" },
+
+	"popupNewChatTitle": { "message": "New chat" },
+	"popupNewChatEdit": { "message": "Edit" },
+	"popupNewChatEmpty": { "message": "No templates yet. Open Edit to add some." },
+
+	"popupBookmarksTitle": { "message": "Bookmarks" },
+	"popupBookmarksEmpty": { "message": "No bookmarks yet. Open a chat and click ☆." },
+	"popupBookmarkOpen": {
+		"message": "Open chat $title$",
+		"placeholders": { "title": { "content": "$1" } }
+	},
+	"popupBookmarkRemove": { "message": "Remove bookmark" },
+	"popupBookmarkNoUrl": { "message": "Bookmark has no URL" },
+	"popupBookmarkUntitled": { "message": "Untitled" },
+
+	"popupDebugTitle": { "message": "Debug" },
+	"popupPerfEnable": { "message": "Enable performance profiling" },
+	"popupPerfEnabledStatus": { "message": "Profiling enabled. Reload the arena.ai tab." },
+	"popupPerfDisabledStatus": { "message": "Profiling disabled." },
+	"popupPerfDumpButton": { "message": "Dump report" },
+	"popupPerfResetButton": { "message": "Reset" },
+	"popupPerfDumpDone": {
+		"message": "Dumped $count$ entries to page console (F12)",
+		"placeholders": { "count": { "content": "$1" } }
+	},
+	"popupPerfResetDone": { "message": "Profiling counters reset" },
+	"popupPerfDumpFailed": { "message": "Failed to dump report" },
+
+	"optionsPageTitle": { "message": "Arena Utils — Settings" },
+	"optionsChatHeader": { "message": "Chat" },
+	"optionsChatDescription": { "message": "These apply on arena.ai conversation pages." },
+	"optionsCodeCollapseLabel": { "message": "Collapse code blocks in AI replies by default" },
+
+	"optionsTemplatesHeader": { "message": "New chat" },
+	"optionsTemplatesDescription": { "message": "These become buttons in the top-left panel. A click opens that mode and can fill the composer." },
+	"optionsAddTemplateButton": { "message": "Add template" },
+	"optionsTemplatesEmpty": { "message": "No chat templates yet. Add one and it will show up in the New chat panel." },
+
+	"optionsArticleHeader": { "message": "Article" },
+	"optionsArticleDescription": {
+		"message": "The popup's \"Explain article\" button sends the largest <article> on the page to arena.ai using this template. Placeholders: {article}, {title}, {url}."
+	},
+	"optionsVideoHeader": { "message": "Video" },
+	"optionsVideoDescription": {
+		"message": "The popup's \"Explain video\" button sends YouTube subtitles to arena.ai using this template. Placeholders: {subtitles}, {title}, {url}. Subtitles come with timestamps like [05:23]."
+	},
+
+	"optionsModelLabel": { "message": "Model for the new chat" },
+	"optionsPromptTemplateLabel": { "message": "Prompt template" },
+	"optionsResetButton": { "message": "Reset to default" },
+
+	"optionsPromptsHeader": { "message": "Prompts" },
+	"optionsPromptsDescription": { "message": "These appear as the Prompts panel on arena.ai pages. Clicking one inserts it into the composer." },
+	"optionsAddPromptButton": { "message": "Add prompt" },
+	"optionsPromptsEmpty": { "message": "No prompts yet. Add one and it will show up in the popup." },
+
+	"optionsCodebaseHeader": { "message": "Codebase" },
+	"optionsCodebaseDescription": {
+		"message": "Snapshot rules for the Codebase panel. The folder itself is picked on the arena.ai page — these settings apply when you press Rebuild there."
+	},
+	"optionsMaxCharsLabel": { "message": "Max characters per chunk" },
+	"optionsUseGitignoreLabel": { "message": "Also apply the folder's root .gitignore" },
+	"optionsFullExcludeLabel": { "message": "Full exclude (gitignore syntax)" },
+	"optionsContentExcludeLabel": { "message": "Content exclude — keep in the tree, skip file bodies" },
+	"optionsCodebaseSaved": { "message": "Saved." },
+
+	"optionsNamePlaceholder": { "message": "Name" },
+	"optionsPromptTextPlaceholder": { "message": "Prompt text" },
+	"optionsTemplateNamePlaceholder": { "message": "Button name" },
+	"optionsTemplatePromptPlaceholder": { "message": "Leave empty to open an empty composer" },
+	"optionsChatTypeLabel": { "message": "Chat type" },
+	"optionsCategoryLabel": { "message": "Category" },
+	"optionsModelALabel": { "message": "Model A" },
+	"optionsModelBLabel": { "message": "Model B" },
+	"optionsInitialPromptLabel": { "message": "Initial prompt (optional)" },
+	"optionsDeleteButton": { "message": "Delete" },
+	"optionsNewPromptName": { "message": "New prompt" },
+	"optionsNewTemplateName": { "message": "New template" },
+
+	"contentPanelMessagesTitle": { "message": "Messages" },
+	"contentPanelMessagesEmpty": { "message": "Open a Direct chat to see messages." },
+	"contentPanelMessagesHint": { "message": "↑ / ↓ jump between messages" },
+	"contentPanelMessagesNoMessages": { "message": "No messages" },
+	"contentPanelMessagesPosition": {
+		"message": "Message $index$ of $total$",
+		"placeholders": {
+			"index": { "content": "$1" },
+			"total": { "content": "$2" }
+		}
+	},
+	"contentPanelMessagesToggle": { "message": "Toggle message navigation" },
+	"contentPanelMessagesPrev": { "message": "Previous message (↑)" },
+	"contentPanelMessagesNext": { "message": "Next message (↓)" },
+	"contentPanelMessagesBottom": { "message": "Scroll to bottom" },
+	"contentPanelRoleUser": { "message": "You" },
+	"contentPanelRoleAI": { "message": "AI" },
+
+	"contentBookmarkAdd": { "message": "Bookmark this chat" },
+	"contentBookmarkRemove": { "message": "Remove bookmark" },
+	"contentBookmarkNeedChat": { "message": "Open a chat to bookmark it" },
+	"contentBookmarkAdded": {
+		"message": "Bookmarked: $title$",
+		"placeholders": { "title": { "content": "$1" } }
+	},
+	"contentBookmarkRemoved": { "message": "Bookmark removed" },
+
+	"contentPanelNewChatTitle": { "message": "New chat" },
+	"contentPanelNewChatToggle": { "message": "Toggle new chat templates" },
+	"contentPanelNewChatEmpty": { "message": "No templates yet. Add some in Options." },
+	"contentPanelNewChatEdit": { "message": "Edit templates" },
+
+	"contentPanelPromptsTitle": { "message": "Prompts" },
+	"contentPanelPromptsToggle": { "message": "Toggle prompt snippets" },
+	"contentPanelPromptsEmpty": { "message": "No prompts yet. Add them in Options." },
+	"contentPanelPromptsEdit": { "message": "Edit prompts" },
+
+	"contentPanelCodebaseTitle": { "message": "Codebase" },
+	"contentPanelCodebaseToggle": { "message": "Toggle codebase fragments" },
+	"contentPanelCodebaseSettings": { "message": "Codebase settings" },
+	"contentPanelCodebaseNoFolder": { "message": "No folder selected" },
+	"contentPanelCodebaseSelect": { "message": "Select…" },
+	"contentPanelCodebaseChange": { "message": "Change…" },
+	"contentPanelCodebaseRebuild": { "message": "Rebuild" },
+	"contentPanelCodebaseScanning": { "message": "Scanning folder…" },
+	"contentPanelCodebaseEmptyNoFolder": { "message": "Pick a folder to build the fragment list. The list lives only in this tab." },
+	"contentPanelCodebaseEmptyNoFragments": { "message": "No fragments. Click Rebuild to regenerate." },
+	"contentPanelCodebasePickerUnavailable": { "message": "Folder picker is not available here. Open Codebase settings." },
+	"contentPanelCodebaseError": {
+		"message": "Codebase: $error$",
+		"placeholders": { "error": { "content": "$1" } }
+	},
+
+	"contentFragmentHeader": {
+		"message": "Fragment $index$/$total$",
+		"placeholders": {
+			"index": { "content": "$1" },
+			"total": { "content": "$2" }
+		}
+	},
+
+	"contentCodeShow": {
+		"message": "Show · $lines$",
+		"placeholders": { "lines": { "content": "$1" } }
+	},
+	"contentCodeShowNoCount": { "message": "Show" },
+	"contentCodeHide": { "message": "Hide" },
+	"contentCodeShowTitle": {
+		"message": "Show $lang$",
+		"placeholders": { "lang": { "content": "$1" } }
+	},
+	"contentCodeHideTitle": {
+		"message": "Hide $lang$",
+		"placeholders": { "lang": { "content": "$1" } }
+	},
+
+	"contentComposerNotFound": { "message": "Composer textarea not found" },
+	"contentSendButtonTimeout": { "message": "Send button did not become enabled in time" },
+
+	"contentErrorNoMessages": { "message": "Could not find messages" },
+	"contentErrorNoMarkdown": {
+		"message": "Didn't find Markdown for message $n$",
+		"placeholders": { "n": { "content": "$1" } }
+	},
+	"contentErrorDownloadFailed": { "message": "Failed to download files" },
+
+	"contentToastExportAlready": { "message": "Export is already underway" },
+	"contentToastExporting": {
+		"message": "Exporting $count$ messages…",
+		"placeholders": { "count": { "content": "$1" } }
+	},
+	"contentToastExportDone": {
+		"message": "Done: $count$ files",
+		"placeholders": { "count": { "content": "$1" } }
+	},
+	"contentToastError": {
+		"message": "Error: $message$",
+		"placeholders": { "message": { "content": "$1" } }
+	},
+	"contentToastPromptInserted": { "message": "Prompt inserted" },
+	"contentToastArticleSending": { "message": "Article inserted, sending…" },
+	"contentToastArticleSent": { "message": "Article sent to AI" },
+	"contentToastArticleManual": { "message": "Prompt inserted. Click Send manually." }
+}

@@ -1,3 +1,5 @@
+const t = (key, subs) => globalThis.ArenaI18n?.t(key, subs) || key;
+
 const autoscroll = document.getElementById("autoscroll");
 const collapseCode = document.getElementById("collapse-code");
 const exportButton = document.getElementById("export");
@@ -96,10 +98,7 @@ async function checkArticlePresence(tabId) {
 					}
 				}
 
-				return {
-					count: articles.length,
-					chars: largest,
-				};
+				return { count: articles.length, chars: largest };
 			},
 		});
 
@@ -271,7 +270,7 @@ function renderButtonList(root, items, tab, emptyText) {
 			});
 
 			if (!result?.ok) {
-				statusEl.textContent = result?.error || "Could not insert prompt";
+				statusEl.textContent = result?.error || t("popupInsertPromptFailed");
 				return;
 			}
 
@@ -300,14 +299,14 @@ async function openChatTemplate(template) {
 
 function renderChatTemplates(templates) {
 	newChatSection.hidden = false;
-	newChatTitle.textContent = "New chat";
+	newChatTitle.textContent = t("popupNewChatTitle");
 	newChatEdit.href = "options.html#chat-templates";
 	newChatTemplates.replaceChildren();
 
 	if (!Array.isArray(templates) || templates.length === 0) {
 		const empty = document.createElement("div");
 		empty.className = "empty";
-		empty.textContent = "No templates yet. Open Edit to add some.";
+		empty.textContent = t("popupNewChatEmpty");
 		newChatTemplates.appendChild(empty);
 		return;
 	}
@@ -337,7 +336,7 @@ function renderBookmarks(bookmarks) {
 	if (!Array.isArray(bookmarks) || bookmarks.length === 0) {
 		const empty = document.createElement("div");
 		empty.className = "empty";
-		empty.textContent = "No bookmarks yet. Open a chat and click ☆.";
+		empty.textContent = t("popupBookmarksEmpty");
 		bookmarksRoot.appendChild(empty);
 		if (bookmarksCount) {
 			bookmarksCount.textContent = "";
@@ -353,20 +352,22 @@ function renderBookmarks(bookmarks) {
 		const row = document.createElement("div");
 		row.className = "bookmark-row";
 
+		const title = bookmark.title || bookmark.id || t("popupBookmarkUntitled");
+
 		const openBtn = document.createElement("button");
 		openBtn.type = "button";
 		openBtn.className = "bookmark-open";
 		openBtn.title = bookmark.url || "";
-		openBtn.setAttribute("aria-label", `Open chat ${bookmark.title || bookmark.id || ""}`);
+		openBtn.setAttribute("aria-label", t("popupBookmarkOpen", [String(title)]));
 
 		const titleEl = document.createElement("span");
 		titleEl.className = "bookmark-title";
-		titleEl.textContent = bookmark.title || bookmark.id || "Untitled";
+		titleEl.textContent = title;
 		openBtn.appendChild(titleEl);
 
 		openBtn.addEventListener("click", async () => {
 			if (!bookmark.url) {
-				statusEl.textContent = "Bookmark has no URL";
+				statusEl.textContent = t("popupBookmarkNoUrl");
 				return;
 			}
 
@@ -377,8 +378,8 @@ function renderBookmarks(bookmarks) {
 		const deleteBtn = document.createElement("button");
 		deleteBtn.type = "button";
 		deleteBtn.className = "bookmark-delete";
-		deleteBtn.title = "Remove bookmark";
-		deleteBtn.setAttribute("aria-label", "Remove bookmark");
+		deleteBtn.title = t("popupBookmarkRemove");
+		deleteBtn.setAttribute("aria-label", t("popupBookmarkRemove"));
 		deleteBtn.textContent = "×";
 
 		deleteBtn.addEventListener("click", async () => {
@@ -404,19 +405,18 @@ async function renderArticleSection(tab) {
 
 	articleSection.hidden = false;
 	explainArticleButton.disabled = true;
-	articleMeta.textContent = "Checking page…";
+	explainArticleButton.textContent = t("popupArticleButton");
+	articleMeta.textContent = t("popupArticleChecking");
 
 	const info = await checkArticlePresence(tab.id);
 
 	if (!info || info.count === 0) {
-		articleMeta.textContent = "No <article> element on this page";
+		articleMeta.textContent = t("popupArticleNone");
 		explainArticleButton.disabled = true;
 		return;
 	}
 
-	const count = info.count;
-	const chars = info.chars || 0;
-	articleMeta.textContent = `${count} article${count > 1 ? "s" : ""} · ~${chars.toLocaleString()} characters`;
+	articleMeta.textContent = t("popupArticleCount", [String(info.count), Number(info.chars || 0).toLocaleString()]);
 	explainArticleButton.disabled = false;
 	explainArticleButton.dataset.tabId = String(tab.id);
 }
@@ -433,31 +433,31 @@ async function renderVideoSection(tab) {
 
 	videoSection.hidden = false;
 	explainVideoButton.disabled = true;
-	videoMeta.textContent = "Checking video…";
+	explainVideoButton.textContent = t("popupVideoButton");
+	videoMeta.textContent = t("popupVideoChecking");
 
 	const info = await checkVideoSubtitles(tab.id);
 
 	if (!info?.hasCaptions) {
-		videoMeta.textContent = "No subtitles available for this video";
+		videoMeta.textContent = t("popupVideoNone");
 		explainVideoButton.disabled = true;
 		explainVideoButton.removeAttribute("data-tab-id");
 		return;
 	}
 
 	const languages = Array.isArray(info.languages) && info.languages.length > 0 ? ` · ${info.languages.join(", ")}` : "";
-	const count = Number(info.count) || 0;
-
-	videoMeta.textContent = `${count} subtitle track${count === 1 ? "" : "s"}${languages}`;
+	videoMeta.textContent = t("popupVideoTracks", [String(Number(info.count) || 0), languages]);
 	explainVideoButton.disabled = false;
 	explainVideoButton.dataset.tabId = String(tab.id);
 }
 
 async function init() {
+	globalThis.ArenaI18n?.apply();
+
 	const tab = await getActiveTab();
 	const stored = await chrome.storage.local.get({
 		disableAutoscroll: false,
 		collapseCodeBlocks: true,
-		prompts: [],
 		chatTemplates: [],
 		bookmarks: [],
 		perfDebug: false,
@@ -492,32 +492,32 @@ async function init() {
 
 	perfDebugInput.addEventListener("change", async () => {
 		await chrome.storage.local.set({ perfDebug: perfDebugInput.checked });
-		statusEl.textContent = perfDebugInput.checked ? "Profiling enabled. Reload the arena.ai tab." : "Profiling disabled.";
+		statusEl.textContent = perfDebugInput.checked ? t("popupPerfEnabledStatus") : t("popupPerfDisabledStatus");
 	});
 
 	perfDumpButton.addEventListener("click", async () => {
 		if (!isArenaTab(tab)) {
-			statusEl.textContent = "Open an arena.ai tab first";
+			statusEl.textContent = t("popupOpenArenaFirst");
 			return;
 		}
 
 		const result = await sendToTab(tab.id, { type: "ARENA_PERF_DUMP" });
 		if (!result?.ok) {
-			statusEl.textContent = result?.error || "Failed to dump report";
+			statusEl.textContent = result?.error || t("popupPerfDumpFailed");
 			return;
 		}
 
-		statusEl.textContent = `Dumped ${result.rows?.length || 0} entries to page console (F12)`;
+		statusEl.textContent = t("popupPerfDumpDone", [String(result.rows?.length || 0)]);
 	});
 
 	perfResetButton.addEventListener("click", async () => {
 		if (!isArenaTab(tab)) {
-			statusEl.textContent = "Open an arena.ai tab first";
+			statusEl.textContent = t("popupOpenArenaFirst");
 			return;
 		}
 
 		await sendToTab(tab.id, { type: "ARENA_PERF_RESET" });
-		statusEl.textContent = "Profiling counters reset";
+		statusEl.textContent = t("popupPerfResetDone");
 	});
 
 	collapseCode.addEventListener("change", async () => {
@@ -528,23 +528,25 @@ async function init() {
 
 	if (!isArenaTab(tab)) {
 		applyTheme(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-		statusEl.textContent = "Open a template to start a chat";
+		statusEl.textContent = t("popupOpenTemplateFirst");
 		exportButton.disabled = true;
+		exportButton.textContent = t("popupExportButton");
 		renderChatTemplates(stored.chatTemplates);
 		return;
 	}
 
 	const status = await sendToTab(tab.id, { type: "ARENA_GET_STATUS" });
 	applyTheme(status?.theme === "dark" ? "dark" : "light");
-	statusEl.textContent = status?.ok ? `${status.messageCount || 0} messages on this page` : "Reload the arena.ai tab after updating the extension";
+	statusEl.textContent = status?.ok ? t("popupMessagesCount", [String(status.messageCount || 0)]) : t("popupReloadTab");
 	exportButton.disabled = false;
+	exportButton.textContent = t("popupExportButton");
 
 	exportButton.addEventListener("click", async () => {
 		exportButton.disabled = true;
-		statusEl.textContent = "Exporting…";
+		statusEl.textContent = t("popupExporting");
 		const result = await sendToTab(tab.id, { type: "ARENA_EXPORT_START" });
 		if (!result?.ok) {
-			statusEl.textContent = result?.error || "Export failed";
+			statusEl.textContent = result?.error || t("popupExportFailed");
 			exportButton.disabled = false;
 			return;
 		}
@@ -556,12 +558,12 @@ if (explainArticleButton) {
 	explainArticleButton.addEventListener("click", async () => {
 		const tabId = Number(explainArticleButton.dataset.tabId || 0);
 		if (!tabId) {
-			articleMeta.textContent = "No target tab";
+			articleMeta.textContent = t("popupArticleNoTarget");
 			return;
 		}
 
 		explainArticleButton.disabled = true;
-		articleMeta.textContent = "Extracting article…";
+		articleMeta.textContent = t("popupArticleExtracting");
 
 		try {
 			const extracted = await extractArticleFromTab(tabId);
@@ -600,12 +602,12 @@ if (explainVideoButton) {
 	explainVideoButton.addEventListener("click", async () => {
 		const tabId = Number(explainVideoButton.dataset.tabId || 0);
 		if (!tabId) {
-			videoMeta.textContent = "No target tab";
+			videoMeta.textContent = t("popupVideoNoTarget");
 			return;
 		}
 
 		explainVideoButton.disabled = true;
-		videoMeta.textContent = "Extracting subtitles…";
+		videoMeta.textContent = t("popupVideoExtracting");
 
 		try {
 			const extracted = await extractVideoFromTab(tabId);
@@ -638,9 +640,6 @@ if (explainVideoButton) {
 			const message = error instanceof Error ? error.message : String(error);
 			videoMeta.textContent = message;
 			explainVideoButton.disabled = false;
-
-			// Если сообщение пришло от нового экстрактора — оно уже содержит детали,
-			// но на всякий случай пишем в консоль весь debug-массив.
 			console.warn("[arena-utils] YouTube extraction failed:", error);
 		}
 	});

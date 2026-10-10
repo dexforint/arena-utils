@@ -10,75 +10,69 @@
 <body>
     <header>
         <strong>Arena Utils</strong>
-        <span id="status">Checking page…</span>
+        <span id="status" data-i18n="popupStatusChecking">Checking page…</span>
     </header>
 
     <label class="check">
         <input id="autoscroll" type="checkbox" />
-        <span>Disable autoscroll after AI replies</span>
+        <span data-i18n="popupAutoscrollLabel">Disable autoscroll after AI replies</span>
     </label>
 
     <label class="check">
         <input id="collapse-code" type="checkbox" />
-        <span>Collapse code blocks in AI replies</span>
+        <span data-i18n="popupCollapseCodeLabel">Collapse code blocks in AI replies</span>
     </label>
 
     <section id="article-section">
         <div class="row">
-            <h2>Article</h2>
+            <h2 data-i18n="popupArticleTitle">Article</h2>
         </div>
-        <p id="article-meta" class="meta">Checking page…</p>
-        <button id="explain-article" type="button" disabled>Explain article</button>
+        <p id="article-meta" class="meta" data-i18n="popupArticleChecking">Checking page…</p>
+        <button id="explain-article" type="button" disabled data-i18n="popupArticleButton">Explain article</button>
     </section>
 
     <section id="video-section" hidden>
         <div class="row">
-            <h2>Video</h2>
+            <h2 data-i18n="popupVideoTitle">Video</h2>
         </div>
-        <p id="video-meta" class="meta">Checking video…</p>
-        <button id="explain-video" type="button" disabled>Explain video</button>
+        <p id="video-meta" class="meta" data-i18n="popupVideoChecking">Checking video…</p>
+        <button id="explain-video" type="button" disabled data-i18n="popupVideoButton">Explain video</button>
     </section>
 
-    <button id="export" type="button">Export chat</button>
+    <button id="export" type="button" data-i18n="popupExportButton">Export chat</button>
 
     <section id="new-chat-section" hidden>
         <div class="row">
-            <h2 id="new-chat-title">New chat</h2>
-            <a id="new-chat-edit" href="options.html#chat-templates" target="_blank" rel="noreferrer">Edit</a>
+            <h2 id="new-chat-title" data-i18n="popupNewChatTitle">New chat</h2>
+            <a id="new-chat-edit" href="options.html#chat-templates" target="_blank" rel="noreferrer"
+                data-i18n="popupNewChatEdit">Edit</a>
         </div>
         <div id="new-chat-templates" class="prompts"></div>
     </section>
 
     <section>
         <div class="row">
-            <h2>Bookmarks</h2>
+            <h2 data-i18n="popupBookmarksTitle">Bookmarks</h2>
             <span id="bookmarks-count" class="muted"></span>
         </div>
         <div id="bookmarks" class="prompts"></div>
     </section>
 
-    <section>
-        <div class="row">
-            <h2>Codebase</h2>
-            <a href="options.html#codebase" target="_blank" rel="noreferrer">Settings</a>
-        </div>
-        <p class="meta">Fragments are inserted from the Codebase panel on arena.ai pages (left column).</p>
-    </section>
-
     <section id="debug-section">
         <div class="row">
-            <h2>Debug</h2>
+            <h2 data-i18n="popupDebugTitle">Debug</h2>
         </div>
         <label class="check">
             <input id="perf-debug" type="checkbox" />
-            <span>Enable performance profiling</span>
+            <span data-i18n="popupPerfEnable">Enable performance profiling</span>
         </label>
         <div class="row" style="margin-top: 8px; gap: 6px;">
-            <button id="perf-dump" type="button" style="flex: 1;">Dump report</button>
-            <button id="perf-reset" type="button" style="flex: 1;">Reset</button>
+            <button id="perf-dump" type="button" style="flex: 1;" data-i18n="popupPerfDumpButton">Dump report</button>
+            <button id="perf-reset" type="button" style="flex: 1;" data-i18n="popupPerfResetButton">Reset</button>
         </div>
     </section>
 
+    <script src="i18n.js"></script>
     <script src="shared.js"></script>
     <script src="chatTemplates.js"></script>
     <script src="popup.js"></script>
