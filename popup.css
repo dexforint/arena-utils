@@ -96,7 +96,6 @@ button,
 }
 
 #export,
-#pick-folder,
 .prompt {
 	padding: 8px 10px;
 	border: 1px solid rgb(var(--border));
@@ -114,13 +113,11 @@ button,
 }
 
 #export:hover:not(:disabled),
-#pick-folder:hover,
 .prompt:hover:not(:disabled) {
 	background: rgb(var(--surface-raised));
 }
 
 #export:focus-visible,
-#pick-folder:focus-visible,
 .prompt:focus-visible,
 .check input:focus-visible,
 a:focus-visible {
@@ -132,10 +129,6 @@ a:focus-visible {
 .prompt:disabled {
 	opacity: 0.45;
 	cursor: not-allowed;
-}
-
-#pick-folder {
-	width: 100%;
 }
 
 .row {

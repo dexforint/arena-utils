@@ -23,6 +23,10 @@ const SCROLL_PARENT_CACHE_MS = 500;
 let scrollParentCache = new WeakMap();
 let listObserver = null;
 let listObserverTarget = null;
+let codebaseCollapsed = true;
+let codebaseSnapshot = null;
+let codebaseDirHandle = null;
+let codebaseGenerating = false;
 
 // ВАЖНО: функции ниже объявлены как top-level function declarations.
 // perfWrap.js находит их через globalThis и оборачивает для профилирования.
@@ -89,6 +93,7 @@ const BOOKMARK_TITLE_MAX = 80;
 const CODE_TOGGLE_CLASS = "__arena-utils-code-toggle";
 const CODE_COLLAPSED_CLASS = "__arena-utils-code-collapsed";
 const HIGHLIGHT_CLASS = "__arena-utils-highlight";
+const CODEBASE_HOST_ID = "__arena_utils_codebase_host__";
 
 const MESSAGE_LIST_SELECTORS = ["main ol.flex-col-reverse", "ol.flex-col-reverse", "ol.mt-8.flex", "ol.mt-8"];
 
@@ -479,6 +484,153 @@ ${PANEL_SHARED_CSS}
 }
 
 .prompt-item-preview {
+	display: block;
+	margin-top: 2px;
+	font-size: 10px;
+	line-height: 1.35;
+	color: hsl(var(--text-muted));
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.edit {
+	display: block;
+	width: 100%;
+	margin: 0;
+	padding: 2px 10px 10px;
+	border: 0;
+	background: transparent;
+	color: hsl(var(--text-muted));
+	cursor: pointer;
+	font: inherit;
+	font-size: 10px;
+	text-align: left;
+}
+
+.edit:hover {
+	color: hsl(var(--text-secondary));
+}
+`;
+
+const CODEBASE_CSS = `
+${PANEL_SHARED_CSS}
+
+.panel {
+	width: 300px;
+}
+
+.count {
+	margin-left: auto;
+	min-width: 18px;
+	padding: 1px 6px;
+	border-radius: 999px;
+	border: 1px solid var(--arena-border-faint);
+	background: var(--arena-raised);
+	color: hsl(var(--text-secondary));
+	font-size: 11px;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+}
+
+.folder-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px;
+	border-bottom: 1px solid var(--arena-border-faint);
+}
+
+.folder-name {
+	flex: 1;
+	min-width: 0;
+	font-size: 11px;
+	color: hsl(var(--text-secondary));
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.folder-name.muted {
+	color: hsl(var(--text-muted));
+}
+
+.folder-btn {
+	flex: none;
+	padding: 4px 8px;
+	border: 1px solid var(--arena-border);
+	border-radius: 6px;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	font: inherit;
+	font-size: 11px;
+	line-height: 1.2;
+}
+
+.folder-btn:hover:not(:disabled) {
+	background: var(--arena-raised);
+}
+
+.folder-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.folder-btn[hidden] {
+	display: none;
+}
+
+.status {
+	padding: 6px 10px 0;
+	color: hsl(var(--text-muted));
+	font-size: 10px;
+	line-height: 1.35;
+	word-break: break-word;
+}
+
+.status:empty {
+	display: none;
+}
+
+.chunk-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 8px;
+}
+
+.empty {
+	padding: 12px 10px 8px;
+	color: hsl(var(--text-muted));
+	font-size: 12px;
+	line-height: 1.4;
+}
+
+.chunk-item {
+	width: 100%;
+	padding: 8px 10px;
+	border: 1px solid var(--arena-border-faint);
+	border-radius: 8px;
+	background: transparent;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+	font: inherit;
+}
+
+.chunk-item:hover {
+	background: var(--arena-raised);
+}
+
+.chunk-item-name {
+	display: block;
+	font-size: 12px;
+	font-weight: 650;
+	color: hsl(var(--text-primary));
+}
+
+.chunk-item-meta {
 	display: block;
 	margin-top: 2px;
 	font-size: 10px;
@@ -1590,6 +1742,7 @@ function applyPageTheme() {
 	applyThemeToHost(document.getElementById(HOST_ID), values);
 	applyThemeToHost(document.getElementById(NEW_CHAT_HOST_ID), values);
 	applyThemeToHost(document.getElementById(PROMPTS_HOST_ID), values);
+	applyThemeToHost(document.getElementById(CODEBASE_HOST_ID), values);
 }
 
 // ---------------------------------------------------------------------------
@@ -2667,6 +2820,9 @@ function positionPromptsPanel() {
 
 	host.style.top = `${Math.max(8, Math.round(top))}px`;
 	host.style.left = leftVal;
+
+	// Codebase идёт третьим в левой колонке — позиция Prompts влияет на неё.
+	positionCodebasePanel();
 }
 
 function setPromptsCollapsed(collapsed, persist = true) {
@@ -2676,6 +2832,9 @@ function setPromptsCollapsed(collapsed, persist = true) {
 		els.panel.dataset.collapsed = promptsCollapsed ? "true" : "false";
 		els.chevron.textContent = promptsCollapsed ? "▾" : "▴";
 	}
+
+	// Раскрытие/схлопывание Prompts сдвигает Codebase ниже.
+	positionCodebasePanel();
 
 	if (persist) {
 		void chrome.storage.local.set({ promptsCollapsed });
@@ -2766,6 +2925,340 @@ function ensurePromptsPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// Codebase panel
+// ---------------------------------------------------------------------------
+
+function getCodebasePanelEls() {
+	const host = document.getElementById(CODEBASE_HOST_ID);
+	if (!host?.shadowRoot) {
+		return null;
+	}
+
+	const root = host.shadowRoot;
+
+	return {
+		host,
+		panel: root.querySelector(".panel"),
+		list: root.querySelector(".chunk-list"),
+		count: root.querySelector(".count"),
+		chevron: root.querySelector(".chevron"),
+		folderName: root.querySelector(".folder-name"),
+		generateBtn: root.querySelector('[data-action="generate"]'),
+		pickBtn: root.querySelector('[data-action="pick"]'),
+		status: root.querySelector(".status"),
+	};
+}
+
+async function readCodebaseSettings() {
+	// Настройки из Options → Codebase. Snapshot при этом не читаем:
+	// он всегда генерируется из текущего handle в этом же табе.
+	let stored = null;
+	try {
+		const result = await chrome.storage.local.get({ codebaseSettings: null });
+		stored = result.codebaseSettings;
+	} catch (_error) {
+		return {};
+	}
+
+	if (!stored || typeof stored !== "object") {
+		return {};
+	}
+
+	return {
+		maxChars: Number(stored.maxChars) > 0 ? Number(stored.maxChars) : undefined,
+		gitignore: Boolean(stored.gitignore),
+		exclude: typeof stored.exclude === "string" || Array.isArray(stored.exclude) ? stored.exclude : undefined,
+		contentExclude: typeof stored.contentExclude === "string" || Array.isArray(stored.contentExclude) ? stored.contentExclude : undefined,
+	};
+}
+
+function updateCodebaseFolderLabel() {
+	const els = getCodebasePanelEls();
+	if (!els?.folderName) {
+		return;
+	}
+
+	if (codebaseDirHandle?.name) {
+		els.folderName.textContent = codebaseDirHandle.name;
+		els.folderName.classList.remove("muted");
+	} else {
+		els.folderName.textContent = "No folder selected";
+		els.folderName.classList.add("muted");
+	}
+
+	if (els.generateBtn) {
+		els.generateBtn.hidden = !codebaseDirHandle;
+	}
+
+	if (els.pickBtn) {
+		els.pickBtn.textContent = codebaseDirHandle ? "Change…" : "Select…";
+	}
+}
+
+function updateCodebaseButtonsDisabled(disabled) {
+	const els = getCodebasePanelEls();
+	if (!els) {
+		return;
+	}
+
+	const buttons = els.host.shadowRoot.querySelectorAll(".folder-btn");
+	for (const button of buttons) {
+		button.disabled = disabled;
+	}
+}
+
+function updateCodebaseProgress(text) {
+	const els = getCodebasePanelEls();
+	if (els?.status) {
+		els.status.textContent = String(text || "");
+	}
+}
+
+async function generateCodebaseSnapshot() {
+	if (!codebaseDirHandle || codebaseGenerating) {
+		return;
+	}
+
+	codebaseGenerating = true;
+	updateCodebaseButtonsDisabled(true);
+	updateCodebaseProgress("Scanning folder…");
+
+	try {
+		const options = await readCodebaseSettings();
+		const snapshot = await window.ArenaCodebase.generateSnapshot(codebaseDirHandle, options, (message) => updateCodebaseProgress(message));
+
+		codebaseSnapshot = snapshot;
+		updateCodebaseProgress("");
+		renderCodebaseList();
+	} catch (error) {
+		console.error("[arena-utils] Codebase snapshot failed:", error);
+		const message = error instanceof Error ? error.message : String(error);
+		updateCodebaseProgress(`Error: ${message}`);
+		showToast(`Codebase: ${message}`);
+	} finally {
+		codebaseGenerating = false;
+		updateCodebaseFolderLabel();
+		updateCodebaseButtonsDisabled(false);
+	}
+}
+
+async function pickCodebaseFolder() {
+	if (codebaseGenerating) {
+		return;
+	}
+
+	if (typeof window.showDirectoryPicker !== "function") {
+		showToast("Folder picker is not available here. Open Codebase settings.");
+		void chrome.runtime.sendMessage({ type: "ARENA_OPEN_OPTIONS", hash: "#codebase" });
+		return;
+	}
+
+	let handle;
+	try {
+		// Требует user gesture — вызывается прямо из click-handler'а.
+		handle = await window.showDirectoryPicker({ mode: "read" });
+	} catch (error) {
+		if (error?.name === "AbortError") {
+			return;
+		}
+
+		showToast(`Codebase: ${error instanceof Error ? error.message : String(error)}`);
+		return;
+	}
+
+	if (!handle) {
+		return;
+	}
+
+	codebaseDirHandle = handle;
+	codebaseSnapshot = null;
+	updateCodebaseFolderLabel();
+	renderCodebaseList();
+
+	await generateCodebaseSnapshot();
+}
+
+function positionCodebasePanel() {
+	const host = document.getElementById(CODEBASE_HOST_ID);
+	if (!host) {
+		return;
+	}
+
+	// Тот же левый отступ, что и у New chat / Prompts: вся левая колонка
+	// выстраивается по одной вертикальной оси.
+	const target = document.querySelector(PORTAL_TARGET_SELECTOR);
+	const leftVal = target ? `${Math.max(8, Math.round(target.getBoundingClientRect().left + 12))}px` : "12px";
+
+	const promptsHost = document.getElementById(PROMPTS_HOST_ID);
+	const promptsPanel = promptsHost?.shadowRoot?.querySelector(".panel");
+
+	let top = 96;
+	if (promptsHost && promptsPanel) {
+		const rect = promptsPanel.getBoundingClientRect();
+		if (rect.height > 0) {
+			top = rect.bottom + 10;
+		}
+	}
+
+	host.style.top = `${Math.max(8, Math.round(top))}px`;
+	host.style.left = leftVal;
+}
+
+function setCodebaseCollapsed(collapsed, persist = true) {
+	codebaseCollapsed = Boolean(collapsed);
+	const els = getCodebasePanelEls();
+	if (els?.panel) {
+		els.panel.dataset.collapsed = codebaseCollapsed ? "true" : "false";
+		els.chevron.textContent = codebaseCollapsed ? "▾" : "▴";
+	}
+
+	if (persist) {
+		void chrome.storage.local.set({ codebaseCollapsed });
+	}
+}
+
+function insertCodebaseChunk(index) {
+	const chunks = Array.isArray(codebaseSnapshot?.chunks) ? codebaseSnapshot.chunks : [];
+	const total = chunks.length;
+	const chunk = chunks[index];
+
+	if (!chunk || typeof chunk.text !== "string") {
+		throw new Error("Chunk is not available");
+	}
+
+	// Заголовок помогает и модели, и человеку понять, что перед ними
+	// фрагмент n из N — части склеиваются по порядку имени.
+	const header = `Фрагмент ${index + 1}/${total}\n\n`;
+	insertPrompt(header + chunk.text);
+}
+
+function renderCodebaseList() {
+	const els = getCodebasePanelEls();
+	if (!els) {
+		return;
+	}
+
+	const chunks = Array.isArray(codebaseSnapshot?.chunks) ? codebaseSnapshot.chunks : [];
+	const total = chunks.length;
+
+	if (els.count) {
+		els.count.textContent = String(total);
+	}
+
+	if (total === 0) {
+		const empty = document.createElement("div");
+		empty.className = "empty";
+
+		if (!codebaseDirHandle) {
+			empty.textContent = "Pick a folder to build the fragment list. The list lives only in this tab.";
+		} else {
+			empty.textContent = "No fragments. Click Rebuild to regenerate.";
+		}
+
+		els.list.replaceChildren(empty);
+		return;
+	}
+
+	const fragment = document.createDocumentFragment();
+
+	for (let i = 0; i < total; i += 1) {
+		const chunk = chunks[i];
+		const name = String(chunk?.name || `chunk-${i + 1}`);
+		const chars = Number(chunk?.chars || 0);
+
+		const button = document.createElement("button");
+		button.type = "button";
+		button.className = "chunk-item";
+		button.title = `Insert ${name} · Фрагмент ${i + 1}/${total}`;
+
+		const nameEl = document.createElement("span");
+		nameEl.className = "chunk-item-name";
+		nameEl.textContent = name;
+
+		const metaEl = document.createElement("span");
+		metaEl.className = "chunk-item-meta";
+		metaEl.textContent = `Фрагмент ${i + 1}/${total} · ${chars.toLocaleString()} chars`;
+
+		button.append(nameEl, metaEl);
+
+		const index = i;
+		button.addEventListener("click", () => {
+			try {
+				insertCodebaseChunk(index);
+			} catch (error) {
+				showToast(`Error: ${error instanceof Error ? error.message : String(error)}`);
+			}
+		});
+
+		fragment.appendChild(button);
+	}
+
+	els.list.replaceChildren(fragment);
+}
+
+function ensureCodebasePanel() {
+	if (document.getElementById(CODEBASE_HOST_ID)) {
+		positionCodebasePanel();
+		return;
+	}
+
+	const host = document.createElement("div");
+	host.id = CODEBASE_HOST_ID;
+	host.style.cssText = "position:fixed;top:12px;left:12px;z-index:2147483646;";
+
+	const shadow = host.attachShadow({ mode: "open" });
+	shadow.innerHTML = `
+		<style>${CODEBASE_CSS}</style>
+		<div class="panel" data-collapsed="${codebaseCollapsed ? "true" : "false"}">
+			<button class="toggle" type="button" title="Toggle codebase fragments">
+				<span class="title">Codebase</span>
+				<span class="count">0</span>
+				<span class="chevron">${codebaseCollapsed ? "▾" : "▴"}</span>
+			</button>
+			<div class="body">
+				<div class="folder-row">
+					<span class="folder-name muted">No folder selected</span>
+					<button class="folder-btn" type="button" data-action="generate" hidden>Rebuild</button>
+					<button class="folder-btn" type="button" data-action="pick">Select…</button>
+				</div>
+				<div class="status"></div>
+				<div class="chunk-list"></div>
+				<button class="edit" type="button">Codebase settings</button>
+			</div>
+		</div>
+	`;
+
+	shadow.querySelector(".toggle").addEventListener("click", () => {
+		setCodebaseCollapsed(!codebaseCollapsed);
+	});
+
+	shadow.querySelector('[data-action="pick"]').addEventListener("click", (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+		void pickCodebaseFolder();
+	});
+
+	shadow.querySelector('[data-action="generate"]').addEventListener("click", (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+		void generateCodebaseSnapshot();
+	});
+
+	shadow.querySelector(".edit").addEventListener("click", () => {
+		void chrome.runtime.sendMessage({
+			type: "ARENA_OPEN_OPTIONS",
+			hash: "#codebase",
+		});
+	});
+
+	document.documentElement.appendChild(host);
+	positionCodebasePanel();
+	applyPageTheme();
+	updateCodebaseFolderLabel();
+	renderCodebaseList();
+}
+
+// ---------------------------------------------------------------------------
 // Schedule
 // ---------------------------------------------------------------------------
 
@@ -2837,10 +3330,11 @@ function scheduleRefresh() {
 		ensurePanel();
 		ensureNewChatPanel();
 		ensurePromptsPanel();
+		ensureCodebasePanel();
 		applyPageTheme();
 		renderPanelList();
 		positionNewChatPanel();
-		positionPromptsPanel();
+		positionPromptsPanel(); // каскадом двигает Codebase
 		updateBookmarkButton();
 	}, 200);
 }
@@ -2858,6 +3352,7 @@ async function init() {
 		panelCollapsed: true,
 		newChatCollapsed: null,
 		promptsCollapsed: true,
+		codebaseCollapsed: true,
 		collapseCodeBlocks: true,
 		chatTemplates: [],
 		prompts: [],
@@ -2869,6 +3364,11 @@ async function init() {
 	chatTemplates = Array.isArray(stored.chatTemplates) ? stored.chatTemplates : [];
 	prompts = Array.isArray(stored.prompts) ? stored.prompts : [];
 	promptsCollapsed = stored.promptsCollapsed !== false;
+	codebaseCollapsed = stored.codebaseCollapsed !== false;
+
+	// codebaseDirHandle / codebaseSnapshot намеренно не восстанавливаются:
+	// это per-tab состояние. Reload вкладки — чистое состояние.
+
 	newChatCollapsedOverride = typeof stored.newChatCollapsed === "boolean";
 	newChatCollapsed = newChatCollapsedOverride ? stored.newChatCollapsed : isExistingChatPage();
 
@@ -2876,9 +3376,11 @@ async function init() {
 	ensurePanel();
 	ensureNewChatPanel();
 	ensurePromptsPanel();
+	ensureCodebasePanel();
 	setPanelCollapsed(panelCollapsed, false);
 	setNewChatCollapsed(newChatCollapsed, false);
 	setPromptsCollapsed(promptsCollapsed, false);
+	setCodebaseCollapsed(codebaseCollapsed, false);
 	renderPanelList();
 	renderNewChatList();
 	renderPromptsList();
@@ -2904,7 +3406,7 @@ async function init() {
 	window.addEventListener("resize", () => {
 		scheduleCurrentSync();
 		positionNewChatPanel();
-		positionPromptsPanel();
+		positionPromptsPanel(); // каскадом двигает Codebase
 	});
 	document.addEventListener("visibilitychange", () => {
 		if (!document.hidden) {
@@ -2952,6 +3454,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
 	if (changes.promptsCollapsed && typeof changes.promptsCollapsed.newValue === "boolean") {
 		promptsCollapsed = changes.promptsCollapsed.newValue;
 		setPromptsCollapsed(promptsCollapsed, false);
+	}
+
+	if (changes.codebaseCollapsed && typeof changes.codebaseCollapsed.newValue === "boolean") {
+		codebaseCollapsed = changes.codebaseCollapsed.newValue;
+		setCodebaseCollapsed(codebaseCollapsed, false);
 	}
 
 	if (changes.bookmarks) {

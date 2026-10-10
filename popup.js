@@ -1,13 +1,10 @@
 const autoscroll = document.getElementById("autoscroll");
 const collapseCode = document.getElementById("collapse-code");
 const exportButton = document.getElementById("export");
-const pickFolderButton = document.getElementById("pick-folder");
 const newChatSection = document.getElementById("new-chat-section");
 const newChatTitle = document.getElementById("new-chat-title");
 const newChatEdit = document.getElementById("new-chat-edit");
 const newChatTemplates = document.getElementById("new-chat-templates");
-const codebaseRoot = document.getElementById("codebase");
-const codebaseMeta = document.getElementById("codebase-meta");
 const statusEl = document.getElementById("status");
 const bookmarksRoot = document.getElementById("bookmarks");
 const bookmarksCount = document.getElementById("bookmarks-count");
@@ -330,25 +327,6 @@ function renderChatTemplates(templates) {
 	}
 }
 
-function renderCodebase(snapshot, tab) {
-	if (snapshot?.chunks?.length) {
-		codebaseMeta.textContent = `${snapshot.folderName} · ${snapshot.stats.parts} parts · ${snapshot.stats.characters} chars`;
-		renderButtonList(
-			codebaseRoot,
-			snapshot.chunks.map((chunk) => ({
-				name: `${chunk.name} (${chunk.chars})`,
-				text: chunk.text,
-			})),
-			tab,
-			"",
-		);
-		return;
-	}
-
-	codebaseMeta.textContent = "";
-	renderButtonList(codebaseRoot, [], tab, "No snapshot yet. Click Select folder…");
-}
-
 function renderBookmarks(bookmarks) {
 	if (!bookmarksRoot) {
 		return;
@@ -481,7 +459,6 @@ async function init() {
 		collapseCodeBlocks: true,
 		prompts: [],
 		chatTemplates: [],
-		codebaseSnapshot: null,
 		bookmarks: [],
 		perfDebug: false,
 	});
@@ -489,26 +466,13 @@ async function init() {
 	autoscroll.checked = Boolean(stored.disableAutoscroll);
 	perfDebugInput.checked = Boolean(stored.perfDebug);
 	collapseCode.checked = stored.collapseCodeBlocks !== false;
-	renderCodebase(stored.codebaseSnapshot, tab);
 	renderBookmarks(stored.bookmarks);
 	void renderArticleSection(tab);
 	void renderVideoSection(tab);
 
-	pickFolderButton.addEventListener("click", async () => {
-		await chrome.tabs.create({
-			url: chrome.runtime.getURL("options.html#codebase"),
-			active: true,
-		});
-		window.close();
-	});
-
 	chrome.storage.onChanged.addListener((changes, area) => {
 		if (area !== "local") {
 			return;
-		}
-
-		if (changes.codebaseSnapshot) {
-			renderCodebase(changes.codebaseSnapshot.newValue, tab);
 		}
 
 		if (changes.chatTemplates && !isArenaTab(tab)) {
