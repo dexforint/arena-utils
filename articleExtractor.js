@@ -1,11 +1,23 @@
-// Извлекает содержимое <article> со страницы и конвертирует его в Markdown.
+// Извлекает содержимое страницы и конвертирует его в Markdown.
 // Подключается через chrome.scripting.executeScript из popup.js.
-// Экспортирует globalThis.__arenaExtractArticle().
+//
+// Экспортирует на globalThis:
+//   __arenaExtractArticle()          — самый крупный <article>
+//   __arenaExtractPage()             — вся страница без обвязки
+//   __arenaExtractContent({ mode })  — article → Readability → страница
+//
+// Readability (vendor/readability.js) необязателен: если он подключён,
+// используется для страниц без <article>. Иначе работает встроенная
+// эвристика по <body>.
 
 (() => {
-	if (globalThis.__arenaExtractArticle) {
+	if (globalThis.__arenaArticleExtractorVersion >= 2) {
 		return;
 	}
+	globalThis.__arenaArticleExtractorVersion = 2;
+
+	const PAGE_MIN_CHARS = 200;
+	const READABILITY_MIN_CHARS = 200;
 
 	const SKIP_TAGS = new Set([
 		"script",
@@ -30,6 +42,37 @@
 		"nav",
 		"aside",
 	]);
+
+	// Расширенный набор: применяется только при извлечении всей страницы.
+	// Внутри <article> header/footer часто несут осмысленный контент,
+	// на уровне страницы — это обвязка.
+	const PAGE_SKIP_TAGS = new Set([...SKIP_TAGS, "header", "footer", "dialog", "menu", "marquee"]);
+
+	const PAGE_SKIP_ROLES = new Set([
+		"navigation",
+		"banner",
+		"contentinfo",
+		"complementary",
+		"search",
+		"form",
+		"dialog",
+		"alertdialog",
+		"menu",
+		"menubar",
+		"tablist",
+		"toolbar",
+	]);
+
+	// Классы/идентификаторы обвязки. Границы токенов обязательны:
+	// без них "uploads" или "padding" попали бы под "ad".
+	const BOILERPLATE_HINT_RE =
+		/(^|[-_\s])(nav|navbar|navigation|menu|sidebar|footer|header|masthead|breadcrumb|breadcrumbs|cookie|consent|banner|advert|ads|ad|promo|sponsor|social|share|sharing|comment|comments|related|recommend|subscribe|newsletter|pagination|pager|skip|toolbar|modal|popup|overlay|drawer|offcanvas|topbar|backdrop|utility)([-_\s]|$)/i;
+
+	// Явные признаки контента перебивают эвристику выше:
+	// "article-header" не должен быть вырезан как "header".
+	const CONTENT_HINT_RE = /(^|[-_\s])(content|main|article|post|entry|markdown|prose|body|text|story|reader|paper|abstract)([-_\s]|$)/i;
+
+	const PAGE_ROOT_SELECTORS = ["main", "[role='main']", ".markdown-body", ".prose", ".post-content", ".entry-content", ".article-content", "#main", "#content"];
 
 	const BLOCK_TAGS = new Set([
 		"address",
@@ -79,6 +122,16 @@
 		if (node.getAttribute("aria-hidden") === "true") return true;
 		return false;
 	}
+
+	function textLength(node) {
+		return String(node?.textContent || "")
+			.replace(/\s+/g, " ")
+			.trim().length;
+	}
+
+	// ------------------------------------------------------------------
+	// DOM → Markdown (используется и для <article>, и для всей страницы)
+	// ------------------------------------------------------------------
 
 	function inline(node) {
 		if (!node) return "";
@@ -398,6 +451,32 @@
 		return serializeChildren(node);
 	}
 
+	// ------------------------------------------------------------------
+	// Заголовок
+	// ------------------------------------------------------------------
+
+	function pickTitle(root) {
+		const scope = root && typeof root.querySelector === "function" ? root : document;
+
+		const h1 = scope.querySelector("h1");
+		if (h1) {
+			const text = inline(h1).trim();
+			if (text.length >= 3) return text;
+		}
+
+		const ogTitle = document.querySelector('meta[property="og:title"]');
+		if (ogTitle) {
+			const content = String(ogTitle.getAttribute("content") || "").trim();
+			if (content.length >= 3) return content;
+		}
+
+		return String(document.title || "").trim();
+	}
+
+	// ------------------------------------------------------------------
+	// <article>
+	// ------------------------------------------------------------------
+
 	function getArticleCandidates() {
 		const nodes = Array.from(document.querySelectorAll("article"));
 		const ranked = [];
@@ -410,7 +489,7 @@
 			}
 
 			const text = String(el.innerText || el.textContent || "").trim();
-			if (text.length < 200) {
+			if (text.length < PAGE_MIN_CHARS) {
 				continue;
 			}
 
@@ -419,25 +498,6 @@
 
 		ranked.sort((a, b) => b.length - a.length);
 		return ranked;
-	}
-
-	function readTitle(article) {
-		const h1 = article.querySelector("h1");
-		if (h1) {
-			const text = inline(h1).trim();
-			if (text.length >= 3) return text;
-		}
-
-		const ogTitle = document.querySelector('meta[property="og:title"]');
-		if (ogTitle) {
-			const content = String(ogTitle.getAttribute("content") || "").trim();
-			if (content.length >= 3) return content;
-		}
-
-		const pageTitle = String(document.title || "").trim();
-		if (pageTitle) return pageTitle;
-
-		return "";
 	}
 
 	function extractArticle() {
@@ -457,12 +517,181 @@
 		return {
 			ok: true,
 			markdown,
-			title: readTitle(article),
+			title: pickTitle(article),
 			url: location.href,
 			chars: markdown.length,
 			articleCount: candidates.length,
+			source: "article",
 		};
 	}
 
+	// ------------------------------------------------------------------
+	// Вся страница
+	// ------------------------------------------------------------------
+
+	function pickPageRoot() {
+		for (const selector of PAGE_ROOT_SELECTORS) {
+			let node = null;
+
+			try {
+				node = document.querySelector(selector);
+			} catch (_error) {
+				continue;
+			}
+
+			if (node && textLength(node) >= PAGE_MIN_CHARS) {
+				return node;
+			}
+		}
+
+		return document.body;
+	}
+
+	function pruneWholePage(root) {
+		const total = textLength(root) || 1;
+		const elements = [root, ...root.querySelectorAll("*")];
+
+		for (const element of elements) {
+			// Родитель мог быть удалён раньше — тогда потомок уже не в дереве.
+			if (element === root || !root.contains(element)) {
+				continue;
+			}
+
+			const tag = element.tagName.toLowerCase();
+
+			if (PAGE_SKIP_TAGS.has(tag)) {
+				element.remove();
+				continue;
+			}
+
+			if (element.hasAttribute("hidden") || element.getAttribute("aria-hidden") === "true") {
+				element.remove();
+				continue;
+			}
+
+			const role = String(element.getAttribute("role") || "")
+				.trim()
+				.toLowerCase();
+			if (role && PAGE_SKIP_ROLES.has(role)) {
+				element.remove();
+				continue;
+			}
+
+			const hint = `${element.id || ""} ${typeof element.className === "string" ? element.className : ""}`.trim();
+			if (!hint || CONTENT_HINT_RE.test(hint) || !BOILERPLATE_HINT_RE.test(hint)) {
+				continue;
+			}
+
+			// Режем только то, что и правда похоже на обвязку:
+			// маленькое само по себе или маленькое относительно страницы.
+			const length = textLength(element);
+			if (length < 400 || length < total * 0.1) {
+				element.remove();
+			}
+		}
+	}
+
+	function extractPage() {
+		const root = pickPageRoot();
+		if (!root) {
+			return { ok: false, reason: "No page content" };
+		}
+
+		const clone = root.cloneNode(true);
+		pruneWholePage(clone);
+
+		let markdown = serializeChildren(clone).trim();
+		if (!markdown) {
+			return { ok: false, reason: "Page is empty after conversion" };
+		}
+
+		const title = pickTitle(root);
+		if (title) {
+			markdown = `# ${title}\n\n${markdown}`;
+		}
+
+		return {
+			ok: true,
+			markdown,
+			title,
+			url: location.href,
+			chars: markdown.length,
+			source: "page",
+		};
+	}
+
+	// ------------------------------------------------------------------
+	// Readability (необязательный вендорный скрипт)
+	// ------------------------------------------------------------------
+
+	function extractReadable() {
+		const Reader = globalThis.Readability;
+		if (typeof Reader !== "function") {
+			return null;
+		}
+
+		let parsed = null;
+
+		try {
+			parsed = new Reader(document.cloneNode(true), { charThreshold: PAGE_MIN_CHARS }).parse();
+		} catch (_error) {
+			return null;
+		}
+
+		if (!parsed || typeof parsed.content !== "string" || !parsed.content) {
+			return null;
+		}
+
+		try {
+			const container = new DOMParser().parseFromString(parsed.content, "text/html");
+			let markdown = serializeChildren(container.body).trim();
+
+			if (markdown.length < READABILITY_MIN_CHARS) {
+				return null;
+			}
+
+			const title = String(parsed.title || "").trim() || pickTitle(document.body);
+			if (title) {
+				markdown = `# ${title}\n\n${markdown}`;
+			}
+
+			return {
+				ok: true,
+				markdown,
+				title,
+				url: location.href,
+				chars: markdown.length,
+				byline: String(parsed.byline || "").trim(),
+				source: "readability",
+			};
+		} catch (_error) {
+			return null;
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Диспетчер
+	// ------------------------------------------------------------------
+
+	function extractContent(options = {}) {
+		const mode = String(options?.mode || "auto");
+
+		if (mode !== "page") {
+			const article = extractArticle();
+			if (article.ok || mode === "article") {
+				return article;
+			}
+		}
+
+		const readable = extractReadable();
+		if (readable) {
+			return readable;
+		}
+
+		return extractPage();
+	}
+
 	globalThis.__arenaExtractArticle = extractArticle;
+	globalThis.__arenaExtractPage = extractPage;
+	globalThis.__arenaExtractContent = extractContent;
 })();

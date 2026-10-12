@@ -33,6 +33,8 @@ const OFFSCREEN_CREATE_BLOBS_TYPE = "ARENA_OFFSCREEN_CREATE_BLOBS";
 const OFFSCREEN_REVOKE_BLOBS_TYPE = "ARENA_OFFSCREEN_REVOKE_BLOBS";
 const OFFSCREEN_IDLE_MS = 5000;
 const OFFSCREEN_REPLY_TIMEOUT_MS = 120000;
+const OFFSCREEN_PARSE_PDF_TYPE = "ARENA_OFFSCREEN_PARSE_PDF";
+const OFFSCREEN_BADGE_COLOR = "#6b7280";
 const DOWNLOAD_COMPLETE_TIMEOUT_MS = 60000;
 
 let offscreenSetupPromise = null;
@@ -102,8 +104,8 @@ async function ensureOffscreenDocument() {
 		offscreenSetupPromise = chrome.offscreen
 			.createDocument({
 				url: OFFSCREEN_PATH,
-				reasons: ["BLOBS"],
-				justification: "Create blob URLs so the service worker can save exported chats as files.",
+				reasons: ["BLOBS", "DOM_PARSER"],
+				justification: "Create blob URLs for exported chats and parse PDF documents for the article analysis feature.",
 			})
 			.catch((error) => {
 				// Гонка: документ уже создан другим вызовом.
@@ -404,6 +406,87 @@ async function downloadAllFiles(folderName, files) {
 }
 
 // ---------------------------------------------------------------------------
+// PDF → Markdown (offscreen, pdf.js)
+// ---------------------------------------------------------------------------
+
+async function extractPdfViaOffscreen(url) {
+	await ensureOffscreenDocument();
+
+	try {
+		return await sendMessageWithTimeout({
+			type: OFFSCREEN_PARSE_PDF_TYPE,
+			url,
+		});
+	} finally {
+		scheduleOffscreenClose();
+	}
+}
+
+async function withActionBadge(task) {
+	try {
+		await chrome.action.setBadgeBackgroundColor({ color: OFFSCREEN_BADGE_COLOR });
+		await chrome.action.setBadgeText({ text: "…" });
+	} catch (_error) {
+		/* ignore */
+	}
+
+	try {
+		return await task();
+	} finally {
+		try {
+			await chrome.action.setBadgeText({ text: "" });
+		} catch (_error) {
+			/* ignore */
+		}
+	}
+}
+
+const DEFAULT_PDF_MAX_CHARS = 200000; // лимит на размер самого PDF, не связан с promptMaxChars
+
+async function openDocumentChat(url) {
+	if (!/^https?:\/\//i.test(url)) {
+		return { ok: false, error: "Unsupported URL" };
+	}
+
+	const extracted = await withActionBadge(() => extractPdfViaOffscreen(url));
+
+	if (!extracted?.ok) {
+		return { ok: false, error: extracted?.error || "Failed to extract the document" };
+	}
+
+	const stored = await chrome.storage.local.get({
+		articleTemplate: ArenaShared.DEFAULT_ARTICLE_TEMPLATE,
+		articleModel: ArenaShared.DEFAULT_ARTICLE_MODEL,
+		promptMaxChars: ArenaShared.DEFAULT_PROMPT_MAX_CHARS,
+	});
+
+	const template = String(stored.articleTemplate || ArenaShared.DEFAULT_ARTICLE_TEMPLATE);
+	const model = String(stored.articleModel || ArenaShared.DEFAULT_ARTICLE_MODEL).trim();
+	const maxChars = ArenaShared.clampPromptChars(stored.promptMaxChars);
+
+	// Ссылки вырезаются и скачивание шаблона режется на фрагменты здесь же —
+	// попап может закрыться, а SW продолжит работу.
+	const messages = ArenaShared.buildArticleMessages(extracted, template, maxChars);
+	const chatUrl = ArenaShared.buildArticleChatUrl(model);
+
+	await chrome.storage.local.set({
+		pendingChatMessages: messages,
+		pendingChatUrl: chatUrl,
+		pendingChatAutoSend: true,
+		pendingChatAutoSendUntil: Date.now() + 15 * 60 * 1000,
+	});
+
+	await chrome.tabs.create({ url: chatUrl, active: true });
+
+	return {
+		ok: true,
+		pages: extracted.pages,
+		chars: extracted.chars,
+		messages: messages.length,
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Messaging
 // ---------------------------------------------------------------------------
 
@@ -415,6 +498,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 		});
 		sendResponse({ ok: true });
 		return;
+	}
+
+	if (message?.type === "ARENA_OPEN_DOCUMENT_CHAT") {
+		void openDocumentChat(String(message.url || ""))
+			.then((result) => sendResponse(result))
+			.catch((error) => {
+				console.error("[arena-utils] Document extraction error:", error);
+				sendResponse({
+					ok: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			});
+		return true;
 	}
 
 	if (message?.type !== "ARENA_EXPORT_DOWNLOAD") {

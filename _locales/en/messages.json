@@ -17,7 +17,7 @@
 
 	"popupArticleTitle": { "message": "Article" },
 	"popupArticleChecking": { "message": "Checking page…" },
-	"popupArticleNone": { "message": "No <article> element on this page" },
+	"popupArticleNone": { "message": "No readable content on this page" },
 	"popupArticleCount": {
 		"message": "$count$ · ~$chars$ characters",
 		"placeholders": {
@@ -86,7 +86,7 @@
 
 	"optionsArticleHeader": { "message": "Article" },
 	"optionsArticleDescription": {
-		"message": "The popup's \"Explain article\" button sends the largest <article> on the page to arena.ai using this template. Placeholders: {article}, {title}, {url}."
+		"message": "The popup's \"Explain article\" button sends the largest <article> on the page to arena.ai using this template. If the page has no <article>, the whole page is converted with boilerplate stripped; PDF documents are converted page by page. Placeholders: {article}, {title}, {url}."
 	},
 	"optionsVideoHeader": { "message": "Video" },
 	"optionsVideoDescription": {
@@ -227,5 +227,64 @@
 	"contentToastPromptInserted": { "message": "Prompt inserted" },
 	"contentToastArticleSending": { "message": "Article inserted, sending…" },
 	"contentToastArticleSent": { "message": "Article sent to AI" },
-	"contentToastArticleManual": { "message": "Prompt inserted. Click Send manually." }
+	"contentToastArticleManual": { "message": "Prompt inserted. Click Send manually." },
+	"popupPageTitle": { "message": "Page" },
+	"popupPageButton": { "message": "Explain page" },
+	"popupPageMeta": {
+		"message": "Whole page · ~$chars$ characters",
+		"placeholders": { "chars": { "content": "$1" } }
+	},
+	"popupPdfTitle": { "message": "PDF" },
+	"popupPdfButton": { "message": "Explain PDF" },
+	"popupPdfMeta": { "message": "PDF document" },
+	"popupPdfMetaNoAccess": { "message": "PDF document · site access required" },
+	"popupPdfExtracting": { "message": "Extracting text from PDF…" },
+	"popupArticleNoPermission": { "message": "Access to this page was not granted" },
+	"popupArticleExtractFailed": { "message": "Could not extract the page content" },
+	"popupInsertPromptFailed": { "message": "Could not insert the prompt" },
+	"popupOpenOptions": { "message": "Settings" },
+
+	"promptFragmentIntro": {
+		"message": "You will receive the text as a sequence of fragments. Do not reply to them. After the fragments you will be given a task."
+	},
+	"promptFragmentHeader": {
+		"message": "Fragment $index$/$total$",
+		"placeholders": {
+			"index": { "content": "$1" },
+			"total": { "content": "$2" }
+		}
+	},
+	"promptFragmentTask": { "message": "Task:" },
+
+	"contentToastFragmentProgress": {
+		"message": "Fragment $index$/$total$ sent, waiting for the reply…",
+		"placeholders": {
+			"index": { "content": "$1" },
+			"total": { "content": "$2" }
+		}
+	},
+	"contentToastFragmentTimeout": {
+		"message": "The reply for fragment $index$/$total$ did not finish. Send the next one manually.",
+		"placeholders": {
+			"index": { "content": "$1" },
+			"total": { "content": "$2" }
+		}
+	},
+	"contentToastFragmentCancelled": {
+		"message": "Fragment $index$/$total$ was not sent. Continue manually.",
+		"placeholders": {
+			"index": { "content": "$1" },
+			"total": { "content": "$2" }
+		}
+	},
+
+	"popupMessagesQueued": {
+		"message": "$count$ messages will be sent to the AI",
+		"placeholders": { "count": { "content": "$1" } }
+	},
+
+	"optionsMaxFragmentCharsLabel": { "message": "Max characters per message" },
+	"optionsMaxFragmentCharsHint": {
+		"message": "Longer article / PDF / video text is split into fragments of this size and sent as a sequence of messages."
+	}
 }

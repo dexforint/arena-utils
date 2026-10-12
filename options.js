@@ -16,6 +16,7 @@ const resetArticleTemplateButton = document.getElementById("reset-article-templa
 const videoModelInput = document.getElementById("video-model");
 const videoTemplateInput = document.getElementById("video-template");
 const resetVideoTemplateButton = document.getElementById("reset-video-template");
+const promptMaxCharsInput = document.getElementById("prompt-max-chars");
 
 let prompts = [];
 let chatTemplates = [];
@@ -62,10 +63,12 @@ const scheduleTemplateSave = createDebounced(() => {
 const scheduleArticleSave = createDebounced(() => {
 	const model = String(articleModelInput.value || "").trim() || ArenaShared.DEFAULT_ARTICLE_MODEL;
 	const template = String(articleTemplateInput.value || "");
+	const maxChars = ArenaShared.clampPromptChars(Number(promptMaxCharsInput.value));
 
 	void chrome.storage.local.set({
 		articleModel: model,
 		articleTemplate: template,
+		promptMaxChars: maxChars,
 	});
 }, 300);
 
@@ -385,6 +388,9 @@ resetVideoTemplateButton.addEventListener("click", () => {
 	scheduleVideoSave();
 });
 
+promptMaxCharsInput.addEventListener("input", scheduleArticleSave);
+promptMaxCharsInput.addEventListener("change", scheduleArticleSave);
+
 async function init() {
 	globalThis.ArenaI18n?.apply();
 	applyOptionsTheme();
@@ -399,6 +405,7 @@ async function init() {
 		articleTemplate: ArenaShared.DEFAULT_ARTICLE_TEMPLATE,
 		videoModel: ArenaShared.DEFAULT_VIDEO_MODEL,
 		videoTemplate: ArenaShared.DEFAULT_VIDEO_TEMPLATE,
+		promptMaxChars: ArenaShared.DEFAULT_PROMPT_MAX_CHARS,
 	});
 
 	prompts = Array.isArray(stored.prompts) ? stored.prompts : [];
@@ -412,6 +419,7 @@ async function init() {
 	articleTemplateInput.value = String(stored.articleTemplate || ArenaShared.DEFAULT_ARTICLE_TEMPLATE);
 	videoModelInput.value = String(stored.videoModel || ArenaShared.DEFAULT_VIDEO_MODEL);
 	videoTemplateInput.value = String(stored.videoTemplate || ArenaShared.DEFAULT_VIDEO_TEMPLATE);
+	promptMaxCharsInput.value = String(ArenaShared.clampPromptChars(stored.promptMaxChars));
 
 	applyCodebaseSettings(
 		stored.codebaseSettings || {

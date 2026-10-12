@@ -17,7 +17,7 @@
 
 	"popupArticleTitle": { "message": "Статья" },
 	"popupArticleChecking": { "message": "Проверка страницы…" },
-	"popupArticleNone": { "message": "На этой странице нет &lt;article&gt;" },
+	"popupArticleNone": { "message": "На этой странице нет текста для анализа" },
 	"popupArticleCount": {
 		"message": "$count$ · ~$chars$ символов",
 		"placeholders": {
@@ -88,7 +88,7 @@
 
 	"optionsArticleHeader": { "message": "Статья" },
 	"optionsArticleDescription": {
-		"message": "Кнопка «Объяснить статью» в попапе отправляет самый крупный &lt;article&gt; со страницы в arena.ai с этим шаблоном. Плейсхолдеры: {article}, {title}, {url}."
+		"message": "Кнопка «Объяснить статью» в попапе отправляет самый крупный &lt;article&gt; со страницы в arena.ai с этим шаблоном. Если &lt;article&gt; нет — конвертируется вся страница без обвязки; PDF-документы конвертируются постранично. Плейсхолдеры: {article}, {title}, {url}."
 	},
 	"optionsVideoHeader": { "message": "Видео" },
 	"optionsVideoDescription": {
@@ -229,5 +229,64 @@
 	"contentToastPromptInserted": { "message": "Промпт вставлен" },
 	"contentToastArticleSending": { "message": "Статья вставлена, отправляю…" },
 	"contentToastArticleSent": { "message": "Статья отправлена ИИ" },
-	"contentToastArticleManual": { "message": "Промпт вставлен. Нажмите Send вручную." }
+	"contentToastArticleManual": { "message": "Промпт вставлен. Нажмите Send вручную." },
+	"popupPageTitle": { "message": "Страница" },
+	"popupPageButton": { "message": "Объяснить страницу" },
+	"popupPageMeta": {
+		"message": "Вся страница · ~$chars$ символов",
+		"placeholders": { "chars": { "content": "$1" } }
+	},
+	"popupPdfTitle": { "message": "PDF" },
+	"popupPdfButton": { "message": "Объяснить PDF" },
+	"popupPdfMeta": { "message": "PDF-документ" },
+	"popupPdfMetaNoAccess": { "message": "PDF-документ · нужен доступ к сайту" },
+	"popupPdfExtracting": { "message": "Извлекаю текст из PDF…" },
+	"popupArticleNoPermission": { "message": "Доступ к странице не предоставлен" },
+	"popupArticleExtractFailed": { "message": "Не удалось извлечь содержимое страницы" },
+	"popupInsertPromptFailed": { "message": "Не удалось вставить промпт" },
+	"popupOpenOptions": { "message": "Настройки" },
+
+	"promptFragmentIntro": {
+		"message": "Тебе будут даны фрагменты текста. Тебе не нужно ничего отвечать на них. После фрагментов тебе будет дано задание."
+	},
+	"promptFragmentHeader": {
+		"message": "Фрагмент $index$/$total$",
+		"placeholders": {
+			"index": { "content": "$1" },
+			"total": { "content": "$2" }
+		}
+	},
+	"promptFragmentTask": { "message": "Задание:" },
+
+	"contentToastFragmentProgress": {
+		"message": "Фрагмент $index$/$total$ отправлен, жду ответа…",
+		"placeholders": {
+			"index": { "content": "$1" },
+			"total": { "content": "$2" }
+		}
+	},
+	"contentToastFragmentTimeout": {
+		"message": "Ответ на фрагмент $index$/$total$ не завершился. Следующий фрагмент нужно отправить вручную.",
+		"placeholders": {
+			"index": { "content": "$1" },
+			"total": { "content": "$2" }
+		}
+	},
+	"contentToastFragmentCancelled": {
+		"message": "Фрагмент $index$/$total$ не отправлен. Продолжите вручную.",
+		"placeholders": {
+			"index": { "content": "$1" },
+			"total": { "content": "$2" }
+		}
+	},
+
+	"popupMessagesQueued": {
+		"message": "$count$ сообщений будет отправлено ИИ",
+		"placeholders": { "count": { "content": "$1" } }
+	},
+
+	"optionsMaxFragmentCharsLabel": { "message": "Максимум символов в сообщении" },
+	"optionsMaxFragmentCharsHint": {
+		"message": "Более длинный текст статьи / PDF / видео делится на фрагменты такого размера и отправляется последовательностью сообщений."
+	}
 }

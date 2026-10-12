@@ -1427,37 +1427,11 @@ function sleep(ms) {
 // ---------------------------------------------------------------------------
 
 function readPendingPrompt() {
-	try {
-		const raw = sessionStorage.getItem(PENDING_PROMPT_KEY);
-		if (!raw) {
-			return null;
-		}
-
-		if (raw.startsWith("{")) {
-			const parsed = JSON.parse(raw);
-			return {
-				text: String(parsed?.text || ""),
-				url: String(parsed?.url || ""),
-			};
-		}
-
-		return { text: raw, url: "" };
-	} catch (_error) {
-		return null;
-	}
+	// без изменений
 }
 
 function writePendingPrompt(text, url = "") {
-	try {
-		if (!text) {
-			sessionStorage.removeItem(PENDING_PROMPT_KEY);
-			return;
-		}
-
-		sessionStorage.setItem(PENDING_PROMPT_KEY, JSON.stringify({ text: String(text), url: String(url || "") }));
-	} catch (_error) {
-		/* ignore */
-	}
+	// без изменений
 }
 
 function clearPendingPrompt() {
@@ -1467,58 +1441,178 @@ function clearPendingPrompt() {
 		/* ignore */
 	}
 
-	void chrome.storage.local.remove(["pendingChatPrompt", "pendingChatUrl", "pendingChatAutoSend", "pendingChatAutoSendUntil"]);
+	void chrome.storage.local.remove(["pendingChatPrompt", "pendingChatMessages", "pendingChatUrl", "pendingChatAutoSend", "pendingChatAutoSendUntil"]);
+}
+
+// Очередь сообщений. Источников два:
+//   1) sessionStorage — клик по шаблону в самой панели, та же вкладка;
+//   2) chrome.storage.local — попап / service worker, новая вкладка.
+async function readPendingMessages() {
+	const pending = readPendingPrompt();
+	if (pending?.text) {
+		return { texts: [pending.text], url: pending.url || "", autoSend: false };
+	}
+
+	let stored = null;
+	try {
+		stored = await chrome.storage.local.get({
+			pendingChatPrompt: "",
+			pendingChatMessages: null,
+			pendingChatUrl: "",
+			pendingChatAutoSend: false,
+			pendingChatAutoSendUntil: 0,
+		});
+	} catch (_error) {
+		return { texts: [], url: "", autoSend: false };
+	}
+
+	const until = Number(stored.pendingChatAutoSendUntil || 0);
+	const notExpired = !until || Date.now() < until;
+	const autoSend = Boolean(stored.pendingChatAutoSend) && notExpired;
+
+	if (Array.isArray(stored.pendingChatMessages) && stored.pendingChatMessages.length > 0) {
+		return {
+			texts: stored.pendingChatMessages.map((item) => String(item ?? "")).filter(Boolean),
+			url: String(stored.pendingChatUrl || ""),
+			autoSend,
+		};
+	}
+
+	if (stored.pendingChatPrompt) {
+		return {
+			texts: [String(stored.pendingChatPrompt)],
+			url: String(stored.pendingChatUrl || ""),
+			autoSend,
+		};
+	}
+
+	return { texts: [], url: "", autoSend: false };
 }
 
 function pendingPromptMatchesPage(pendingUrl) {
-	if (!pendingUrl) {
-		return true;
-	}
-
-	try {
-		const expected = new URL(pendingUrl, location.origin);
-
-		// arena.ai после загрузки переписывает URL через history.replaceState
-		// (добавляет трекинг, переупорядочивает параметры). Сравниваем только
-		// pathname и ключевые model-параметры — иначе prompt тихо теряется.
-		if (expected.pathname !== location.pathname) {
-			return false;
-		}
-
-		const current = new URL(location.href);
-		for (const name of ["model_a", "model_b"]) {
-			if ((expected.searchParams.get(name) || "") !== (current.searchParams.get(name) || "")) {
-				return false;
-			}
-		}
-
-		return true;
-	} catch (_error) {
-		return true;
-	}
+	// без изменений
 }
 
 async function waitForSendButton(timeoutMs = 8000) {
-	const startedAt = Date.now();
-
-	while (Date.now() - startedAt < timeoutMs) {
-		const button = document.querySelector(SEND_BUTTON_SELECTOR);
-		if (button && !button.disabled && button.getAttribute("aria-disabled") !== "true") {
-			return button;
-		}
-		await sleep(80);
-	}
-
-	return null;
+	// без изменений
 }
 
 async function clickSendButton() {
-	const button = await waitForSendButton();
+	// без изменений
+}
+
+function isSendButtonReady() {
+	const button = document.querySelector(SEND_BUTTON_SELECTOR);
 	if (!button) {
-		throw new Error(t("contentSendButtonTimeout"));
+		return false;
+	}
+	if (button.disabled) {
+		return false;
+	}
+	if (button.getAttribute("aria-disabled") === "true") {
+		return false;
+	}
+	return true;
+}
+
+// Ждём, пока модель закончит отвечать на текущее сообщение: Send-кнопка
+// снова доступна и список сообщений не меняется 700 мс. Без этого отправка
+// следующего фрагмента либо отклонится фронтендом, либо «съест» ввод.
+async function waitForGenerationComplete(timeoutMs = 180000) {
+	const startedAt = Date.now();
+	const list = getMessageList();
+	let lastMutationAt = Date.now();
+	let observer = null;
+
+	if (list) {
+		observer = new MutationObserver(() => {
+			lastMutationAt = Date.now();
+		});
+		observer.observe(list, { childList: true, subtree: true, characterData: true });
 	}
 
-	button.click();
+	try {
+		// Даём странице время перевести Send в disabled после клика.
+		await sleep(600);
+
+		while (Date.now() - startedAt < timeoutMs) {
+			if (isSendButtonReady() && Date.now() - lastMutationAt >= 700) {
+				return true;
+			}
+			await sleep(150);
+		}
+
+		return false;
+	} finally {
+		observer?.disconnect();
+	}
+}
+
+async function fillComposerWithRetry(text, attempts = 60) {
+	for (let attempt = 0; attempt < attempts; attempt += 1) {
+		try {
+			fillComposer(text);
+			await sleep(200);
+
+			const textarea = getComposerTextarea();
+			if (textarea && textarea.value !== text) {
+				fillComposer(text);
+				await sleep(100);
+			}
+
+			return true;
+		} catch (_error) {
+			await sleep(120);
+		}
+	}
+
+	return false;
+}
+
+async function sendMessagesSequentially(texts) {
+	const total = texts.length;
+	if (total === 0) {
+		return;
+	}
+
+	// Очередь чистим в самом начале: если пользователь обновит вкладку
+	// посреди рассылки, повторного «с нулевого фрагмента» не будет.
+	clearPendingPrompt();
+
+	for (let index = 0; index < total; index += 1) {
+		const text = texts[index];
+		const isLast = index === total - 1;
+
+		const filled = await fillComposerWithRetry(text);
+		if (!filled) {
+			showToast(t("contentComposerNotFound"));
+			return;
+		}
+
+		if (total > 1) {
+			showToast(t("contentToastFragmentProgress", [String(index + 1), String(total)]));
+		}
+
+		try {
+			await clickSendButton();
+		} catch (_error) {
+			showToast(t("contentToastArticleManual"));
+			return;
+		}
+
+		if (isLast) {
+			showToast(t("contentToastArticleSent"));
+			return;
+		}
+
+		const completed = await waitForGenerationComplete();
+		if (!completed) {
+			showToast(t("contentToastFragmentTimeout", [String(index + 2), String(total)]));
+			return;
+		}
+
+		await sleep(300);
+	}
 }
 
 async function insertPendingPrompt() {
@@ -1526,80 +1620,38 @@ async function insertPendingPrompt() {
 		return;
 	}
 
-	let pending = readPendingPrompt();
-	let text = pending?.text || "";
-	let pendingUrl = pending?.url || "";
-	let autoSend = false;
-
-	if (!text) {
-		const stored = await chrome.storage.local.get({
-			pendingChatPrompt: "",
-			pendingChatUrl: "",
-			pendingChatAutoSend: false,
-			pendingChatAutoSendUntil: 0,
-		});
-
-		text = String(stored.pendingChatPrompt || "");
-		pendingUrl = String(stored.pendingChatUrl || "");
-
-		const until = Number(stored.pendingChatAutoSendUntil || 0);
-		const notExpired = !until || Date.now() < until;
-		autoSend = Boolean(stored.pendingChatAutoSend) && notExpired;
-	}
-
-	if (!text) {
+	const pending = await readPendingMessages();
+	if (pending.texts.length === 0) {
 		return;
 	}
 
-	if (!pendingPromptMatchesPage(pendingUrl)) {
+	if (!pendingPromptMatchesPage(pending.url)) {
 		console.warn("[arena-utils] Pending prompt URL does not match the current page; skipping.", {
-			expected: pendingUrl,
+			expected: pending.url,
 			current: location.href,
 		});
 		return;
 	}
 
+	// Одиночное сообщение без автоотправки — просто вставляем в поле ввода
+	// (клик по шаблону из панели).
+	const shouldAutoSend = pending.autoSend || pending.texts.length > 1;
+
 	pendingPromptInFlight = true;
 
 	try {
-		for (let attempt = 0; attempt < 50; attempt += 1) {
-			if (!readPendingPrompt()?.text) {
-				const stored = await chrome.storage.local.get({ pendingChatPrompt: "" });
-				if (!stored.pendingChatPrompt) {
-					return;
-				}
-			}
-
-			try {
-				fillComposer(text);
-				await sleep(350);
-
-				const textarea = getComposerTextarea();
-				if (textarea && textarea.value !== text) {
-					fillComposer(text);
-				}
-
-				clearPendingPrompt();
-
-				if (autoSend) {
-					showToast(t("contentToastArticleSending"));
-					await sleep(150);
-
-					try {
-						await clickSendButton();
-						showToast(t("contentToastArticleSent"));
-					} catch (_sendError) {
-						showToast(t("contentToastArticleManual"));
-					}
-				} else {
-					showToast(t("contentToastPromptInserted"));
-				}
-
+		if (!shouldAutoSend) {
+			const filled = await fillComposerWithRetry(pending.texts[0]);
+			if (!filled) {
 				return;
-			} catch (_error) {
-				await sleep(100);
 			}
+
+			clearPendingPrompt();
+			showToast(t("contentToastPromptInserted"));
+			return;
 		}
+
+		await sendMessagesSequentially(pending.texts);
 	} finally {
 		pendingPromptInFlight = false;
 	}

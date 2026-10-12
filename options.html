@@ -57,6 +57,14 @@
                     <span data-i18n="optionsPromptTemplateLabel">Prompt template</span>
                     <textarea id="article-template" spellcheck="false"></textarea>
                 </label>
+                <label class="field">
+                    <span data-i18n="optionsMaxFragmentCharsLabel">Max characters per message</span>
+                    <input id="prompt-max-chars" type="number" min="1000" step="1000" />
+                </label>
+                <p class="muted" data-i18n="optionsMaxFragmentCharsHint">
+                    Longer article / PDF / video text is split into fragments of this size and sent as a sequence of
+                    messages.
+                </p>
                 <div class="row wrap">
                     <button id="reset-article-template" type="button" data-i18n="optionsResetButton">Reset to
                         default</button>

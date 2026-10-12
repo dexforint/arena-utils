@@ -302,3 +302,35 @@ section {
 	opacity: 0.5;
 	cursor: not-allowed;
 }
+
+.header-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.ghost {
+	border: 1px solid rgb(var(--border));
+	border-radius: 6px;
+	padding: 2px 8px;
+	background: transparent;
+	color: hsl(var(--interactive-normal));
+	cursor: pointer;
+	font: inherit;
+	font-size: 11px;
+	line-height: 1.4;
+	transition:
+		background 0.15s ease,
+		color 0.15s ease;
+}
+
+.ghost:hover {
+	background: rgb(var(--surface-raised));
+	color: hsl(var(--interactive-active));
+}
+
+.ghost:focus-visible {
+	outline: 2px solid hsl(var(--interactive-link) / 0.45);
+	outline-offset: 2px;
+}
